@@ -36,12 +36,4 @@ guld_clean <- guld_raw |>
 
 # antal_bestilte < max_antal # Fjernet den hvor der var for mange bestilte?
 
-mean_afhentningsgrad <- mean(guld_clean$afhentningsgrad) # Gennemsnitlig afhentningsgrad = 0,86
-mean_bestilte <- mean(guld_clean$antal_bestilte) # Gennemsnitlig antal bestilte = 798,4 stk.
-mean_afhentede <- mean(guld_clean$antal_afhentede) # Gennemsnitlig antal afhentede = 689,6 stk.
-mean_spild <- mean_bestilte - mean_afhentede # Gennemsnitligt antal spildte guldmenuer = 108,8 stk.
-mean_spild * 50 * 16
-
-total_bestilte <- sum(guld_clean$antal_bestilte) # = 78.242 stk.
-total_afhentede <- sum(guld_clean$antal_afhentede) # = 67.579 stk.
-total_spildt <- total_bestilte - total_afhentede # = 10.663 stk.
+write_rds(guld_clean, "vff.rds")

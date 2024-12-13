@@ -1,6 +1,6 @@
 pacman::p_load(DBI, dbplyr, tidyverse, RSQLite)
 
-# vff <- 
+vff <- readRDS("vff.rds")
 dmi <- readRDS("dmi_færdig.rds")
 superstats <- read.csv("tilskuere.csv")
 
