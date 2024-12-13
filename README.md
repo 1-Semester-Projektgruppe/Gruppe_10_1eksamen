@@ -7,3 +7,5 @@ Rækkefølge:
 4. sql_1eksamen
 5. Fil hvor vi udvælger og laver variabler
 6. Fil hvor vi kører modeller
+
+Til sidst samler vi alle 6 filer i en quarto-fil
