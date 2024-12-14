@@ -7,7 +7,7 @@ guld_clean <- guld_raw |>
   rename( # ændrer navnene på kolonnerne til mere relevante navne
     antal_afhentede = Guld_menu_stk,
     antal_bestilte = Antal_bestilte,
-    modstander = Kamp,
+    ude = Kamp,
     dato = Dato,
     max_antal = Antal_max) |> 
   filter(
@@ -16,14 +16,16 @@ guld_clean <- guld_raw |>
   ) |> 
   select(!Gule_poletter_stk) |>         # Eksluderer Gule_poletter_stk kolonnen, da den ikke er relevant.
   mutate( # Skaber nye kolonner baseret på eksisterende kolonner
+    antal_spild = antal_bestilte - antal_afhentede,
+    afhentningsgrad = round((antal_afhentede / antal_bestilte * 100), 1),
+    afhentede_max = round((antal_afhentede / max_antal * 100), 1),
+    bestilte_max = round((antal_bestilte / max_antal * 100), 1),
+    spildegrad = round((antal_spild / antal_bestilte * 100), 1),
     dato = if_else(
       str_detect(dato, "^\\d+$"), # Tjek for tal (Excel-datoer)
       format(convert_to_date(as.numeric(dato)),   # Konverter Excel-datonummer
              "%d.%m.%Y"),
       format(dmy(dato), "%d.%m.%Y")),                      # Konverter tekstbaserede datoer
-    afhentningsgrad = antal_afhentede / antal_bestilte,
-    afhentede_max = antal_afhentede / max_antal,
-    bestilte_max = antal_bestilte / max_antal
   ) |> 
   separate(dato, into = c("dag", "måned", "år")) |> 
   mutate(
@@ -34,6 +36,22 @@ guld_clean <- guld_raw |>
     dato, år, måned, dag, ugedag
   )
 
-# antal_bestilte < max_antal # Fjernet den hvor der var for mange bestilte?
+vff <- guld_clean |> 
+  group_by(ude) |> 
+  mutate(
+    mean_afhentede = round(mean(antal_afhentede), 1),
+    mean_bestilte = round(mean(antal_bestilte), 1),
+    mean_afhentningsgrad = round(mean(afhentningsgrad), 1),
+    mean_spild = round(mean(antal_spild)),
+    sidste_afhentede = antal_afhentede[which.max(dato)],
+    sidste_bestilte = antal_bestilte[which.max(dato)],
+    sidste_afhentningsgrad = afhentningsgrad[which.max(dato)],
+    sidste_spild = antal_spild[which.max(dato)]
+  ) |> 
+  ungroup()
 
-write_rds(guld_clean, "data/vff.rds")
+# Skal vi fjerne den hvor der var for mange bestilte? antal_bestilte < max_antal
+
+write_rds(vff, "data/vff.rds")
+
+vff <- read_rds("data/vff.rds")
