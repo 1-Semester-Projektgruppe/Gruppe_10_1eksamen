@@ -1,14 +1,12 @@
 pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl, tibble, dslabs, jsonlite, rjson)
 
-samlet_dmi <- tibble()
-
+# API: DMI
+# Lave tom tibble til at indsætte dmi-data
 samlet_dmi_flot <- tibble()
 
-tilskuere <- read_csv("tilskuere.csv")
-
-# API: DMI
 # Lave liste over datoer der skal hentes data fra.
-alle_datoer <- as.character(guld_clean$dato) # as.character() fordi ellers så bruger den mærkelige tal som dato
+vff <- read_rds("data/vff.rds")
+alle_datoer <- as.character(vff$dato) # as.character() fordi ellers så bruger den mærkelige tal som dato
 
 # Definere dele af request-url, der ikke ændres.
 base_url <- "https://dmigw.govcloud.dk/v2/"
@@ -54,16 +52,12 @@ for (dato_x in alle_datoer) {
   }
 }
 
-saveRDS(samlet_dmi_flot, file = "samlet_dmi_flot.RData")
+write_rds(samlet_flot_dmi, "data/dmi.rds")
 
-load("samlet_dmi_flot.RData")
-
-write_rds(samlet_dmi_flot, "samlet_dmi_flot.rds")
-
-flot_dmi <- read_rds("samlet_dmi_flot.rds")
+dmi <- read_rds("data/dmi.rds")
 
 # Filtrer relevante kolonner
-flot_dmi_filtered <- flot_dmi %>%
+flot_dmi_filtered <- dmi %>%
   select(dato, tid, temp_mean_past1h, precip_dur_past1h, precip_past1h, wind_speed_past1h) %>%
   drop_na()
 
