@@ -1,7 +1,7 @@
 pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl, tibble, dslabs, jsonlite, rjson)
 
 # Importerer udleveret datasæt
-guld_raw <- read_excel("Guld.xlsx")
+guld_raw <- read_excel("data/Guld.xlsx")
 
 guld_clean <- guld_raw |>
   rename( # ændrer navnene på kolonnerne til mere relevante navne
@@ -36,4 +36,4 @@ guld_clean <- guld_raw |>
 
 # antal_bestilte < max_antal # Fjernet den hvor der var for mange bestilte?
 
-write_rds(guld_clean, "vff.rds")
+write_rds(guld_clean, "data/vff.rds")
