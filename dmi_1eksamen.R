@@ -1,7 +1,12 @@
 pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl, tibble, dslabs, jsonlite, rjson)
 
+<<<<<<< Updated upstream
 samlet_dmi <- tibble()
 
+=======
+# API: DMI
+# Laver tom tibble til at indsætte dmi-data
+>>>>>>> Stashed changes
 samlet_dmi_flot <- tibble()
 
 tilskuere <- read_csv("tilskuere.csv")
