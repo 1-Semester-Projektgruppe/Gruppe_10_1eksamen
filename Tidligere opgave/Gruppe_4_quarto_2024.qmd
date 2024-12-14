@@ -1,0 +1,1440 @@
+---
+title: "VFF"
+subtitle: "Winter Case Study"
+author: 
+-   Filipp Ignatov
+-   Rebecca Pouline Wamming Lie
+-   Jens Martin Linding Ottosen
+-   Benjamin Ingemann Holmen
+-   Silvia Edith Gonzalez Padilla
+date: today
+format: 
+  docx:
+    toc: true
+    toc-location: left
+    code-fold: true
+    code-summary: "Show the code"
+editor: 
+  markdown: 
+    wrap: 72
+fontsize: 12pt
+mainfont: Arial
+linestretch: 1.5
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE, echo=FALSE, cache=TRUE}
+
+#| label: fig-interpolation
+#| fig-cap: Webscraping fra superstat.dk
+#| warning: false
+#| message: false
+#| echo: false
+#| cache: true
+
+
+# Superstat Scraping ------------------------------------------------------
+
+# Load libraries
+pacman::p_load(rvest, dplyr, tidyr, lubridate, stringr, zoo, purrr)
+
+# Define the base URL without the specific season
+base_url <- "https://superstats.dk/1div/program?aar="
+
+# Specify the range of seasons you are interested in
+start_season <- 2007
+end_season <- 2023  # Adjust as needed
+
+# Initialize an empty dataframe to store the combined tables
+combined_df <- data.frame()
+#format(combined_df$Tilskuere, scientific = FALSE)
+
+
+# Loop through each season
+for (season in start_season:end_season) {
+  # Construct the URL for the current season
+  url <- paste0(base_url, season, "%2F", season + 1)
+  
+  # Read HTML content
+  html_content <- url %>%
+    read_html(encoding = "UTF-8")
+  
+  # Extract all tables within the div with id "club"
+  round_tables <- html_content %>%
+    html_nodes("#club table") %>%
+    html_table()
+  
+  # Process each round table and append it to the combined dataframe
+  for (round_df in round_tables) {
+    # Clean and process the data (similar to your existing code)
+    round_df$Tilskuere <- as.character(round_df$Tilskuere)
+    round_df$Tilskuere <-
+      gsub("\\.", "", round_df$Tilskuere, fixed = TRUE)
+    round_df$Tilskuere <- as.numeric((round_df$Tilskuere))
+    #round_df$Tilskuere <- sprintf("%.10f", round_df$Tilskuere)
+    #round_df$Tilskuere <- as.numeric(gsub("[,.]", "", round_df$Tilskuere))
+    round_df <- round_df[, 1:5, drop = FALSE]
+    names(round_df)[2] <- "Dato"
+    round_df$Tid <-
+      sub(".*\\bkl\\. ([0-9:.]+).*", "\\1", round_df$Dato)
+    round_df <- round_df %>%
+      select(-Dato, Tid, everything())
+    combined_df <- bind_rows(combined_df, round_df)
+    combined_df$Tilskuere <-
+      ifelse(
+        combined_df$Tilskuere %% 1 == 0,
+        as.character(as.integer(combined_df$Tilskuere)),
+        format(
+          combined_df$Tilskuere,
+          nsmall = 3,
+          trim = TRUE
+        )
+      )
+    combined_df$Tilskuere <-
+      format(combined_df$Tilskuere, scientific = FALSE)
+    combined_df$Tilskuere <- as.character(combined_df$Tilskuere)
+    combined_df$Tilskuere <- gsub("\\.", "", combined_df$Tilskuere)
+    combined_df$Tilskuere <- gsub("\\s", "", combined_df$Tilskuere)
+    combined_df$Tilskuere <- as.numeric(combined_df$Tilskuere)
+  }
+}
+
+# Data cleaning and transformation
+combined_df <- combined_df %>%
+  separate(col = "Kamp",
+           into = c("Hjemme", "Ude"),
+           sep = "-") |>
+  separate(col = "Res",
+           into = c("HS", "US"),
+           sep = "-")
+combined_df1 = combined_df |>
+  select(2, 3, 4, 5, 6, 7, 8)
+#select(-1)
+combined_df2 = combined_df1 |>
+  select(7, 6, 1, 3, 2, 4, 5) |>
+  mutate(Dato = dmy(sub("\\s*kl\\.\\s*\\d{2}\\.\\d{2}", "", Dato)))
+
+# Filter data for "Viborg FF"
+filtered_data <- combined_df2 %>%
+  filter(str_detect(Hjemme, "Viborg FF"))
+
+#Further data manipulation
+
+my_data4 <- filtered_data |>
+  mutate(Ugedag = weekdays(Dato), .before = Dato) |>
+  mutate(Tid = gsub("\\.", ":", Tid))
+
+my_data4$HS = as.numeric(my_data4$HS)
+my_data4$US = as.numeric(my_data4$US)
+
+my_data5 = na.omit(my_data4)
+#View(my_data5)
+attach(my_data5)
+
+
+
+
+
+library(xml2)
+library(rvest)
+library(dplyr)
+
+# Your URL
+base_url <- "https://superstats.dk/hold/sason?id=11&vis=hjemme"
+# Read HTML content, extract nodes, and assign to tables06
+req_url <- base_url |>
+  
+  read_html(encoding = "UTF-8") |>
+  
+  html_nodes("select[name=aar] option") 
+length(req_url)
+print(req_url)
+# Extract the text values from the nodeset
+options <- xml_text(req_url)
+# Combine all values into a single column
+options_df <- data.frame(Option = options)
+# Print the resulting data frame
+
+#options_df is your dataframe with the "Option" column
+# Define your base URL
+base_url <- "https://superstats.dk/hold/sason?id=11&vis=hjemme&aar="
+# Select seasons you need
+selected_options <- options_df$Option[1:19]
+# Create a list to store the data frames
+all_data_frames <- list()
+# Loop through selected options
+for (option in selected_options) {
+  # Combine with the base URL to create the full URL
+  url <- paste(base_url, option, sep = "")
+  
+  # Read HTML content
+  webpage <- read_html(url, encoding = "UTF-8")
+  
+  # Extract tables
+  tables <- webpage %>% html_nodes("#club table")
+  
+  # Extract data frames from tables
+  data_frames <- lapply(tables, function(table) {
+    as.data.frame(html_table(table))
+  })
+  
+  # Store the data frames in the list
+  all_data_frames[[option]] <- data_frames
+}
+
+
+# Create an empty data frame to store the results
+combined_data <- data.frame()
+
+# Loop through all seasons in the list
+for (season in names(all_data_frames)) {
+  # Extract the third variable (assuming it's a column name) of each season
+  variable_data <- all_data_frames[[season]][[3]]
+  
+  # Add a column to store the season information
+  variable_data$Season <- season
+  
+  # Combine the results into the main data frame
+  combined_data <- rbind(combined_data, variable_data)
+}
+
+# Print the combined data frame
+print(combined_data)
+
+
+
+# Apply the format function to the "Tilskuere" column conditionally
+combined_data$Tilskuere <- ifelse(combined_data$Tilskuere %% 1 == 0, as.character(as.integer(combined_data$Tilskuere)), format(combined_data$Tilskuere, nsmall = 3, trim = TRUE))
+combined_data$Tilskuere <- format(combined_data$Tilskuere, scientific = FALSE)
+combined_data$Tilskuere <- as.character(combined_data$Tilskuere)
+combined_data$Tilskuere <- gsub("\\.", "", combined_data$Tilskuere)
+combined_data$Tilskuere <- gsub("\\s", "", combined_data$Tilskuere)
+combined_data$Tilskuere <- as.numeric(combined_data$Tilskuere)
+
+split_df <- combined_data[!is.na(combined_data$Tilskuere), ]
+
+split_df <- split_df[, -c(8, 7, 6, 1)]
+
+split_df <- separate(split_df, "Kamp", into = c("HomeTeam", "AwayTeam"), sep = "-")
+split_df <- separate(split_df, "Res", into = c("HomeScore", "AwayScore"), sep = "-")
+
+
+split_df$Dato <- as.POSIXct(split_df$Dato, format="%d.%m.%Y")
+split_df$Dato <- format(split_df$Dato, "%Y-%m-%dT%H:%M:%SZ")
+split_df$Dato <- as.POSIXct(split_df$Dato, format="%Y-%m-%dT%H:%M:%SZ")
+
+split_df$Weekday <- weekdays(split_df$Dato)
+
+super_tidy <- split_df |>
+  select(Weekday, Dato, HomeTeam, HomeScore, AwayTeam, AwayScore, Tilskuere) |>
+  separate(Dato, into = c("Dato", "Tid"), sep = "T") |>
+  rename(Ugedag = Weekday, Dato = Dato, Tid = Tid, Hjemme = HomeTeam, HS = HomeScore, Ude = AwayTeam, US = AwayScore, Tilskuere = Tilskuere)|>
+  mutate(Ugedag = case_when(
+    Ugedag == "Monday" ~ "mandag",
+    Ugedag == "Tuesday" ~ "tirsdag",
+    Ugedag == "Wednesday" ~ "onsdag",
+    Ugedag == "Thursday" ~ "torsdag",
+    Ugedag == "Friday" ~ "fredag",
+    Ugedag == "Saturday" ~ "lørdag",
+    Ugedag == "Sunday" ~ "søndag",
+    TRUE ~ Ugedag
+  )) |>
+  mutate(Hjemme = case_when(
+    Hjemme == "VFF " ~ "Viborg FF",
+    TRUE ~ Hjemme
+  ))
+
+super_tidy$Tid[is.na(super_tidy$Tid)] <- "00:00:00Z"
+
+library(dplyr)
+Data1 = data.frame(my_data5)
+Data2 = data.frame(super_tidy)
+Data1 <- data.frame(lapply(Data1, trimws))
+Data2 <- data.frame(lapply(Data2, trimws))
+Data2 = na.omit(Data2)
+
+test1 = full_join(Data1, Data2)
+test1
+
+test1 <- test1 %>%
+  mutate(Liga = ifelse(Tid != "00:00:00Z", "1.Div", "Superliga"))
+
+test1 <- test1 |>
+  mutate(Liga = ifelse(Tid != "00:00:00Z", "1.Div", "Superliga"))
+test1 = test1 |>
+  mutate(Win = ifelse(HS > US, 1, 0))
+test1 = test1 |>
+  mutate(Draw = ifelse(HS == US, 1, 0))
+test1 = test1 |>
+  mutate(Loss = ifelse(HS < US, -1, 0))
+
+```
+
+```{r, include=FALSE, echo=FALSE, cache=TRUE}
+
+#| label: fig-interpolation
+#| fig-cap: Efterspørgsel på koldskål
+#| warning: false
+#| message: false
+#| echo: false
+#| cache: true
+
+
+library(httr)
+library(jsonlite)
+library(tidyverse)
+# API Get Requests DMI ---------------------------------------------------------------------
+
+
+
+base_url <- "https://dmigw.govcloud.dk/v2/"
+info_url <- "metObs/collections/observation/items?"
+# Prøv med forskellige stations ID´s
+station_id <- "stationId=06060"
+limit <- "&limit=300000"
+api_key <- "&api-key=8c3c6f62-6cba-4f71-9211-ad641b582fad" ## Husk forhelved nu at sætte jeres egen api nøgle ind
+
+# Funktion til at hente data for et bestemt parameter og dato
+fetch_data <- function(parameter_id, date) {
+  datetime <- paste0("datetime=", date, "T12:00:00Z/", date, "T12:00:00Z")
+  full_url <- paste0(base_url, info_url, station_id, "&", datetime, limit, parameter_id, api_key)
+  
+  api_call <- httr::GET(full_url)
+  if (api_call$status_code == 200) {
+    api_json <- content(api_call, "text", encoding = "UTF-8") %>%
+      jsonlite::fromJSON(flatten = TRUE)
+    return(api_json)
+  } else {
+    warning(paste("API-kald mislykkedes for dato:", date))
+    return(NULL)
+  }
+}
+
+# Læs datoer fra CSV-fil, spring første række over
+# date_file <- test1$Dato
+# dates_df <- date_file
+
+
+
+
+selected_rows <- test1$Dato
+
+
+
+
+# Initialiser en tom dataframe til at holde data for alle datoer
+all_dates_data <- data.frame(Date = character(), 
+                             Temp = numeric(), 
+                             Rain = numeric(), 
+                             Wind = numeric(),
+                             stringsAsFactors = FALSE)
+
+# Hent data for hver dato og parameter og tilføj til dataframe
+for (date in selected_rows) {
+  data_parameter_id1 <- fetch_data("&parameterId=temp_mean_past1h", date)
+  data_parameter_id2 <- fetch_data("&parameterId=precip_dur_past1h", date)
+  data_parameter_id3 <- fetch_data("&parameterId=wind_speed_past1h", date)
+  
+  # Tjek om der er data tilgængelig for denne dato
+  if (!is.null(data_parameter_id1) && !is.null(data_parameter_id2) && !is.null(data_parameter_id3) &&
+      length(data_parameter_id1$features$properties.value) > 0 &&
+      length(data_parameter_id2$features$properties.value) > 0 &&
+      length(data_parameter_id3$features$properties.value) > 0) {
+    
+    # Udtræk værdier fra de hentede data
+    Temp <- data_parameter_id1$features$properties.value
+    Rain <- data_parameter_id2$features$properties.value
+    Wind <- data_parameter_id3$features$properties.value
+    
+    # Opret en midlertidig dataframe med hentede data for den aktuelle dato
+    temp_df <- data.frame(Date = rep(date, length(Temp)),
+                          Temp = Temp,
+                          Rain = Rain,
+                          Wind = Wind,
+                          stringsAsFactors = FALSE)
+    
+    # Tilføj den midlertidige dataframe til hoveddataframen
+    all_dates_data <- bind_rows(all_dates_data, temp_df)
+  } else {
+    warning(paste("Ingen data tilgængelig for dato:", date))
+  }
+}
+
+# Vis dataframe med data for alle datoer
+head(all_dates_data)
+
+nrow(all_dates_data)
+
+
+
+DMI_tidy = all_dates_data
+
+test2 = full_join(test1, DMI_tidy, join_by(Dato == Date), keep = F)
+
+test2$Streak <- 0
+
+
+
+#Her laver vi en streak counter ud fra Win og Loss
+for (i in 3:nrow(test2)) {
+  if (test2$Win[i] == 1) {
+    if (test2$Streak[i - 1] < 0) {
+      # Reset streak to 0 if previous streak was more than -2 and the next match is a win
+      test2$Streak[i] <- 0
+    } else {
+      # Increment streak if the current match is a win
+      test2$Streak[i] <- test2$Streak[i - 1] + 1
+    }
+  } else if (test2$Loss[i] == -1) {
+    test2$Streak[i] <-
+      ifelse(test2$Streak[i - 1] > 0,-1, test2$Streak[i - 1] - 1)
+  } else {
+    # Reset to 0 if the current match is a draw
+    test2$Streak[i] <- 0
+  }
+}
+
+#Corona dummy til at vise om datoen falder inden for intervallet
+test2$Corona <- ifelse(test2$Dato >= as.Date("2020-03-06") &
+                         test2$Dato <= as.Date("2021-05-21"),
+                       1,
+                       0)
+
+team_type_mapping <- data.frame(
+  Team = c("FCK", "BIF", "FCM", "AGF", "SIF", "RFC", "AaB","Randers FC"),
+  Type = c("A", "A", "A", "A", "B", "B", "B","B")
+)
+
+
+# Opret en liste med hold og deres betydning (A, B eller C)
+
+
+# Gemmer de ønskede lokale hold i en vektor
+lokale_hold <- c("Skive IK", "Silkeborg IF", "Brabrand IF", "AC Horsens", "AGF", "Hobro IK", "Randers FC", "VB", "FCM", "SIF", "AaB", "ACH", "RFC", "HOB")
+
+
+
+test2 <- test2 %>%  mutate(LokalOpgør = as.numeric(Ude %in% lokale_hold))
+
+#View(test2)
+
+
+
+test2 <- test2 %>%
+  mutate(LokalOpgør = ifelse(Ude %in% c("Skive IK", "Silkeborg IF", "Brabrand IF", "AC Horsens", "AGF", "Hobro IK", "Randers FC", "VB", "FCM", "SIF", "AaB", "ACH", "RFC", "HOB"), 1, 0))
+
+#View(test2)
+
+
+test2 <- test2 %>%
+  left_join(team_type_mapping, by = c("Ude" = "Team"))
+test2 <- test2 %>%
+  mutate(Type = ifelse(!is.na(Type), as.character(Type), "C"))
+
+test2 <- test2 %>%
+  mutate(UN = week(Dato)) %>%
+  select(names(test2)[1], UN, everything())
+
+test2$Season <- ifelse(month(test2$Dato) >= 7,
+                       paste(year(test2$Dato), "-",
+                             year(test2$Dato) + 1),
+                       paste(year(test2$Dato) - 1, "-",
+                             year(test2$Dato)))
+test2 = test2 |>
+  select(names(test2)[1], UN, Season, everything())
+test2$Tilskuere = as.numeric(test2$Tilskuere)
+test2$US = as.integer(test2$US)
+test2$HS = as.integer(test2$HS)
+str(test2)
+
+# test2 <- test2 |>
+#   mutate(Ugedag = weekdays(Dato), .before = Dato) |>
+#   mutate(Tid = gsub("\\.", ":", Tid))
+# 
+# test2$Corona <- ifelse(test2$Dato >= as.Date("2020-03-06") &
+#                                 test2$Dato <= as.Date("2021-05-21"),
+#                               1,
+#                               0)
+
+
+
+
+test2
+
+
+test3 = na.omit(test2)
+test3 = test3 
+test3$TypeA <- as.integer(test3$Type == 'A')
+test3$TypeB <- as.integer(test3$Type == 'B')
+test3$TypeC <- as.integer(test3$Type == 'C')
+
+
+#View(test3)
+
+
+
+
+```
+
+```{r, include=FALSE, echo=FALSE}
+
+#| label: fig-interpolation
+#| fig-cap: Efterspørgsel på koldskål
+#| warning: false
+#| message: false
+#| echo: false
+
+# Statistics --------------------------------------------------------------
+
+
+pacman::p_load("tidyverse", "magrittr", "nycflights13", "gapminder",
+               "Lahman", "maps", "lubridate", "pryr", "hms", "hexbin",
+               "feather", "htmlwidgets", "broom", "pander", "modelr",
+               "XML", "httr", "jsonlite", "lubridate", "microbenchmark",
+               "splines", "ISLR2", "MASS", "testthat", "leaps", "caret", "glmnet","ggplot2")
+
+
+
+# Explorativ analyse  -----------------------------------------------------------------
+
+# Konverter kun chr-kolonner til factor
+test3$Dato = as.Date(test3$Dato)
+test3_måned = test3 |> 
+  filter(month(Dato) == 2)
+
+test3$Type = as.factor(test3$Type)
+
+final_data = test3[, !names(test3) %in% c("Dato", "Season", "Tid", "Hjemme", "Ude","Ugedag","Type")]
+final_data <- final_data |> 
+  filter(Corona == 0) |> 
+  dplyr::select(-Corona)  
+#   mutate(Ugedag = case_when(
+#     Ugedag == "Monday" ~ "mandag",
+#     Ugedag == "Tuesday" ~ "tirsdag",
+#     Ugedag == "Wednesday" ~ "onsdag",
+#     Ugedag == "Thursday" ~ "torsdag",
+#     Ugedag == "Friday" ~ "fredag",
+#     Ugedag == "Saturday" ~ "lørdag",
+#     Ugedag == "Sunday" ~ "søndag",
+#     TRUE ~ Ugedag
+#   ))
+final_data$Liga = as.factor(final_data$Liga)
+str(final_data)
+str(test3)
+
+
+options(scipen = 100)
+?options()
+
+#final_data_bif = final_data[, !names(final_data) %in% c("HS", "US", "Win", "Draw", "Loss", "Rain", "LokalOpgør","TypeB","TypeC","UN" )]
+# Udtræk kun de numeriske kolonner
+numeriske_variabler <- final_data[, sapply(final_data, is.numeric)]  
+
+# Opret en korrelationsmatrix
+cor_matrix <- cor(numeriske_variabler)
+
+library(corrplot)
+# Opret et varmekortgraf
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", tl.col = "black", tl.srt = 100)
+
+# Opret et scatterplot for hver kombination af numeriske variabler
+pairs(numeriske_variabler)
+
+# Violin plot på Type ------------------------------------------------------
+ggplot(test3, aes(x=Type, y = Tilskuere)) +
+  geom_violin(aes(fill = Type), draw_quantiles = c(0.25, 0.5, 0.75), color = "white") +
+  geom_jitter(aes(color = Type), width = 0.1) +
+  scale_fill_manual(values = c("A" = "skyblue", "B" = "lightgreen", "C" = "lightcoral")) +
+  scale_color_manual(values = c("A" = "darkblue", "B" = "darkgreen", "C" = "darkred")) +
+  labs(title = "Violin Plot af Tilskuere på Type set 2003-2023", x = "Type", y = "Tilskuere")
+
+
+# Violin plot på Ugedag ---------------------------------------------------
+ggplot(test3, aes(x = Ugedag, y = Tilskuere)) +
+  geom_violin(aes(fill = Ugedag), draw_quantiles = c(0.25, 0.5, 0.75), color = "white") +
+  geom_jitter(color = "black", width = 0.1) +
+  scale_fill_manual(values = c(
+    "Mandag" = "skyblue",
+    "Tirsdag" = "lightgreen",
+    "Onsdag" = "lightcoral",
+    "Torsdag" = "lightpink",
+    "Fredag" = "lightgoldenrod",
+    "Lørdag" = "lightsalmon",
+    "Søndag" = "lightsteelblue"
+  )) +
+  labs(title = "Violin Plot af Tilskuere på Ugedag", x = "Ugedag", y = "Tilskuere")
+
+
+# Trænings- & testdata -----------------------------------------------------------------
+
+# Forbered data til glmnet
+x <- model.matrix(Tilskuere ~ . - 1, final_data)
+y <- final_data$Tilskuere
+
+
+# Opdeling i trænings- og testsæt
+set.seed(4)
+train_01 <- sample(1:nrow(x), nrow(x) * 0.6)
+remaining_01 <- setdiff(1:nrow(x), train_01)
+test_01 <- remaining_01
+x_train <- x[train_01, ]
+y_train <- y[train_01]
+x_test <- x[test_01, ]
+y_test <- y[test_01]
+
+
+
+# Uden features(Skod) -----------------------------------------------------------
+# Opretter en baseline model uden features
+model_uden_x <- lm(Tilskuere ~ 1, data = final_data[train_01, ])
+
+# Forudsigelser med modellen på testdatasættet
+predicted_values <- predict(model_uden_x, newdata = final_data[test_01, ])
+
+# Beregner Mean Squared Error (MSE) og derefter Root Mean Squared Error (RMSE)
+mse_1feature <- mean((predicted_values - final_data[test_01, 'Tilskuere'])^2)
+rmse_1feature <- sqrt(mse_1feature)
+
+# Udskriver RMSE og modelopsummering
+print(mse_1feature)
+print(rmse_1feature)
+summary(model_uden_x)
+
+# Model uden features - scatterplot
+ggplot(final_data[test_01,], aes(x = Tilskuere, y = predicted_values)) +
+  geom_point(color = "darkblue", size = 3) +
+  labs(title = "Model uden features",
+       x = "Faktiske Tilskuere", y = "Forudsagte Tilskuere") +
+  theme_minimal()
+
+
+
+# Ridge -------------------------------------------------------------------
+
+# Opretter en sekvens af lambda-værdier for Ridge-regression
+grid <- 10^seq(10, -2, length = 100)
+
+# Træner Ridge-regressionsmodellen
+ridge.mod <- glmnet(x_train, y_train, alpha = 0, lambda = grid, thresh = 1e-12)
+
+# Udfører krydsvalidering for at finde den optimale lambda-værdi
+set.seed(4)
+cv.out <- cv.glmnet(x_train, y_train, alpha = 0, lambda = grid)
+plot(cv.out)
+
+# Finder den optimale lambda-værdi og den mest konservative lambda-værdi
+bestlam <- cv.out$lambda.min
+bestlam_1se <- cv.out$lambda.1se
+
+# Foretager forudsigelser på testdatasættet med den optimale lambda-værdi
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = x_test)
+
+# Beregner MSE og RMSE for Ridge-regressionsmodellen
+mse_ridge <- mean((ridge.pred - y_test)^2)
+rmse_ridge <- sqrt(mse_ridge)
+
+# Udskriver RMSE for Ridge-regressionsmodellen
+print(rmse_ridge)
+print(mse_ridge)
+
+
+# Lasso -------------------------------------------------------------------
+# Opretter en sekvens af lambda-værdier for Lasso-regression
+grid <- 10^seq(10, -2, length = 100)
+
+# Træner Lasso-regressionsmodellen
+lasso.mod <- glmnet(x_train, y_train, alpha = 1, lambda = grid, thresh = 1e-12)
+
+# Sætter en seed for reproducerbarhed
+set.seed(4)
+
+# Udfører krydsvalidering for at finde den optimale lambda-værdi
+cv.out <- cv.glmnet(x_train, y_train, alpha = 1, nfolds = 10, lambda = grid)
+
+# Plotter krydsvalideringsresultaterne
+plot(cv.out)
+
+# Gemmer de optimale lambda-værdier
+bestlam <- cv.out$lambda.min
+bestlam_1se <- cv.out$lambda.1se
+
+# Laver forudsigelser på testdatasættet med den optimale lambda-værdi
+lasso.pred <- predict(lasso.mod, s = bestlam, newx = x_test)
+
+# Koefficenter - variabler skrumpes til 0
+out <- glmnet(x, y, alpha = 1, lambda = grid)
+lasso.coef <- predict(out, type = "coefficients",
+                      s = bestlam)[1:17, ]
+lasso.coef
+lasso.coef[lasso.coef != 0]
+
+# Beregner MSE for Lasso-regressionsforudsigelserne
+mse_lasso <- mean((lasso.pred - y_test)^2)
+
+# Beregner RMSE ved at tage kvadratroden af MSE
+rmse_lasso <- sqrt(mse_lasso)
+
+# Udskriver MSE og RMSE
+print(mse_lasso)
+print(rmse_lasso)
+
+
+# Loop over elastic net-------------------------------------------------
+# Funktionen til at udføre regression
+perform_regression <- function(alpha, x_train, y_train, x_test, y_test, fold_count) {
+  
+  set.seed(4)  # Sikrer reproducerbarhed
+  grid <- 10^seq(10, -2, length = 100)
+  cv_model <- cv.glmnet(x_train, y_train, alpha = alpha, lambda = grid, nfolds = fold_count)
+  cv_mse <- cv_model$cvm[cv_model$lambda == cv_model$lambda.min] # k-fold CV MSE for bedste lambda
+  best_lambda <- cv_model$lambda.min
+  model <- glmnet(x_train, y_train, alpha = alpha, lambda = best_lambda)
+  predictions_test <- predict(model, newx = x_test)
+  test_mse <- mean((y_test - predictions_test)^2)
+  return(list(model = model, cv_mse = cv_mse, test_mse = test_mse, best_lambda = best_lambda))
+}
+
+# Antallet af folds for k-fold cross-validation
+fold_count <- 10
+
+# Ridge Regression
+ridge_results <- perform_regression(0, x_train, y_train, x_test, y_test, fold_count)
+print(ridge_results$cv_mse)
+print(ridge_results$test_mse)
+
+# Lasso Regression
+lasso_results <- perform_regression(1, x_train, y_train, x_test, y_test, fold_count)
+print(lasso_results$cv_mse)
+print(lasso_results$test_mse)
+
+# Loop for forskellige alpha værdier
+alpha_results <- data.frame(alpha = numeric(), cv_mse = numeric(), test_mse = numeric(), best_lambda = numeric())
+for (i in seq(0, 1, by = 0.1)) {
+  results <- perform_regression(i, x_train, y_train, x_test, y_test, fold_count)
+  alpha_results <- rbind(alpha_results, data.frame(alpha = i, cv_mse = results$cv_mse, test_mse = results$test_mse, best_lambda = results$best_lambda))
+}
+
+# Vis resultaterne
+print(alpha_results)
+
+which.min(alpha_results$test_mse) #nr 10
+
+# Udskriv MSE for række 10
+print(alpha_results$test_mse[10])
+sqrt(alpha_results$test_mse[10])
+
+# Multipel linæer regression med alle variabler -----------------------------------------------------------
+
+# Opretter en lineær model med flere variabler
+model_alle_x <- lm(Tilskuere ~ ., data = final_data[train_01, ])
+
+# Forudsigelser på træningssættet
+predicted_values_train <- predict(model_alle_x, newdata = final_data[train_01, ])
+
+# Beregner MSE for træningssættet
+mse_train <- mean((final_data[train_01,]$Tilskuere - predicted_values_train)^2)
+
+# Beregner RMSE for træningssættet
+rmse_train <- sqrt(mse_train)
+
+# Forudsigelser på testsættet
+predicted_values_test <- predict(model_alle_x, newdata = final_data[test_01, ])
+
+# Beregner MSE for testsættet
+overfit_mse <- mean((final_data[test_01,]$Tilskuere - predicted_values_test)^2)
+
+# Beregner RMSE for testsættet
+overfit_rmse <- sqrt(overfit_mse)
+
+# Udskriver RMSE for træning og test - tjekker overfit
+# print(rmse_train)
+# print(rmse_test)
+# print(overfit_mse)
+# print(overfit_rmse)
+
+summary(model_alle_x)
+
+# OB VELOVERVEJET ---------------------------------------------------------
+
+# Oprettelse af en model til at forudsige tilskuertal for OB mod VFF kampe
+OB_velovervejet_lm_model <- lm(Tilskuere ~ Temp + Streak + Wind + Liga + TypeC + UN, data = final_data[train_01, ])
+
+# Forudsigelse for en specifik kamp
+prediction_data <- data.frame(Temp = 3.3, Streak = 2, Wind = 5.1, Liga = "Superliga", TypeC = 1, UN = 7)
+predicted_tilskuere <- predict(OB_velovervejet_lm_model, newdata = prediction_data)
+
+# Forudsigelse på testdatasættet
+predicted_tilskuere_test <- predict(OB_velovervejet_lm_model, newdata = final_data[test_01,])
+
+# Beregning af MSE og RMSE for testdatasættet
+mse_ob_test <- mean((predicted_tilskuere_test - final_data[test_01,]$Tilskuere)^2)
+rmse_ob_test <- sqrt(mse_ob_test)
+
+# Udskrivning af resultater for testdatasættet
+print(mse_ob_test)
+print(rmse_ob_test)
+print(predicted_tilskuere)
+
+summary(OB_velovervejet_lm_model)
+
+#yhat OB 4.299 
+
+
+# RFC VELOVERVEJET --------------------------------------------------------
+# Træning af model
+RFC_velovervejet_lm_model <- lm(Tilskuere ~ Temp + Streak + Wind + Liga + LokalOpgør + UN, data = final_data[train_01, ])
+
+# Opretter forudsigelsesdata for en specifik kampsituation
+prediction_data_rfc <- data.frame(Temp = 3.3, Streak = 3, Wind = 5.1, LokalOpgør = 1, Liga = "Superliga", UN = 9)
+
+# Forudsigelser for den specifikke kamp
+predicted_tilskuere_rfc <- predict(RFC_velovervejet_lm_model, newdata = prediction_data_rfc)
+
+# Beregning af MSE og RMSE for den specifikke kamp
+mse_rfc_ny <- mean((predicted_tilskuere_rfc - final_data[test_01,]$Tilskuere)^2)
+rmse_rfc_ny <- sqrt(mse_rfc_ny)
+
+# Forudsigelser på testdatasættet
+predicted_tilskuere_test_rfc <- predict(RFC_velovervejet_lm_model, newdata = final_data[test_01,])
+
+# Beregning af MSE og RMSE for testdatasættet
+mse_rfc_test <- mean((predicted_tilskuere_test_rfc - final_data[test_01,]$Tilskuere)^2)
+rmse_rfc_test <- sqrt(mse_rfc_test)
+
+# Udskriver resultater
+print(mse_rfc_ny)
+print(rmse_rfc_ny)
+print(mse_rfc_test)
+print(rmse_rfc_test)
+print(predicted_tilskuere_rfc)
+
+summary(RFC_velovervejet_lm_model)
+
+#yhat RFC 5.619
+
+# BIF VELOVERVEJET --------------------------------------------------------
+# Træning af model
+Bif_velovervejet_lm_model <- lm(Tilskuere ~ Temp + Streak + Wind + Liga + TypeA + UN, data = final_data[train_01, ])
+
+# Opretter forudsigelsesdata for en specifik kampsituation
+prediction_data_bif <- data.frame(Temp = 6.4, Streak = 4, Wind = 5.1, Liga = "Superliga", TypeA = 1, UN = 10)
+
+# Forudsigelser for den specifikke kamp
+predicted_tilskuere_bif <- predict(Bif_velovervejet_lm_model, newdata = prediction_data_bif)
+
+# Beregning af MSE og RMSE for den specifikke kamp
+mse_bif_ny <- mean((predicted_tilskuere_bif - final_data[test_01,]$Tilskuere)^2)
+rmse_bif_ny <- sqrt(mse_bif_ny)
+
+# Forudsigelser på testdatasættet
+predicted_tilskuere_test_bif <- predict(Bif_velovervejet_lm_model, newdata = final_data[test_01,])
+
+# Beregning af MSE og RMSE for testdatasættet
+mse_bif_test <- mean((predicted_tilskuere_test_bif - final_data[test_01,]$Tilskuere)^2)
+rmse_bif_test <- sqrt(mse_bif_test)
+
+# Udskriver resultater
+print(mse_bif_ny)
+print(rmse_bif_ny)
+print(mse_bif_test)
+print(rmse_bif_test)
+print(predicted_tilskuere_bif)
+
+summary(Bif_velovervejet_lm_model)
+
+#yhat BIF 6.824
+
+
+# Graf MSE -------------------------------------------------------------------
+
+sqrt(mse_1feature)
+sqrt(mse_ridge)
+sqrt(mse_lasso)
+sqrt(alpha_results$test_mse[10])
+sqrt(overfit_mse)
+sqrt(mse_ob_test)
+
+
+
+results_df <- data.frame(
+  Model = c("Only Y", "Lasso", "Ridge", "Elastic net", "OB","RFC","BIF","Overfit"),
+  MSE = c(mse_1feature, mse_lasso, mse_ridge, alpha_results$test_mse[10], mse_ob_test, mse_rfc_test, mse_bif_test, overfit_mse)
+  # Add other metrics if needed
+)
+
+results_df <- results_df[order(-results_df$MSE), ]
+
+
+# Plot the data with reordered levels
+ggplot(results_df, aes(x = reorder(Model, -MSE), y = MSE, fill = Model)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(title = "Konkurrende modeller",
+       x = "Model",
+       y = "Mean Squared Error (MSE)") +
+  theme_minimal()
+
+#GRAF FOR SQRT MSE
+results_df <- results_df[order(-results_df$MSE), ]
+
+results_df <- data.frame(
+  Model = c("Only Y", "Lasso", "Ridge","OB","RFC","BIF"),
+  MSE = c(sqrt(mse_1feature), sqrt(mse_lasso), sqrt(mse_ridge),sqrt(mse_ob_test),sqrt(mse_rfc_test), sqrt(mse_bif_test)
+  # Add other metrics if needed
+))
+
+library(ggplot2)
+
+ggplot(results_df, aes(x = reorder(Model, -MSE), y = MSE, fill = Model)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(title = "Konkurrende modeller",
+       x = "Model",
+       y = "Mean Squared Error (MSE)") +
+  theme_minimal()
+
+
+
+
+
+
+# Anova -------------------------------------------------------------------
+
+
+
+# Nu, da alle modeller er tilpasset med samme datasæt, kan du sammenligne dem med anova
+
+anova(model_uden_x, Bif_velovervejet_lm_model,RFC_velovervejet_lm_model,OB_velovervejet_lm_model, model_alle_x)
+
+
+
+
+
+
+# Antag at n er antallet af observationer i testdatasættet
+n <- length(y_test)  # Erstat med den faktiske længde af dit testdatasæt
+
+# Beregn BIC for Ridge model
+k_ridge <- length(ridge_results$model$beta)  # Antal ikke-nul parametre i modellen
+BIC_ridge <- n * log(ridge_results$test_mse) + k_ridge * log(n)
+
+# Beregn BIC for Lasso model
+k_lasso <- sum(lasso_results$model$beta != 0)  # Antal ikke-nul parametre i modellen
+BIC_lasso <- n * log(lasso_results$test_mse) + k_lasso * log(n)
+
+# Beregn BIC for den valgte Elastic Net model (række 8)
+k_elasticnet <- sum(alpha_results$best_lambda[8] != 0)  # Antal ikke-nul parametre for række 8
+BIC_elasticnet <- n * log(alpha_results$test_mse[8]) + k_elasticnet * log(n)
+
+# Udskriv BIC for hver model
+print(BIC_ridge)
+print(BIC_lasso)
+print(BIC_elasticnet)
+
+
+# Opret en ny dataframe med BIC-værdier
+bic_df <- data.frame(
+  Model = c("Ridge", "Lasso", "Elastic Net"),
+  BIC = c(BIC_ridge, BIC_lasso, BIC_elasticnet)
+)
+
+# Plot BIC værdier
+ggplot(bic_df, aes(x = Model, y = BIC, fill = Model)) +
+  geom_bar(stat = "identity") +
+  labs(title = "BIC konkurrende modeller",
+       x = "Model",
+       y = "Bayesian Information Criterion (BIC)") +
+  theme_minimal()
+
+
+
+
+```
+
+
+
+
+
+# 1. Resumé 
+
+I dette projekt fokuseres der på analyse af tilskuertallene til Viborg Fodsports Forenings (VFF) fodboldkampe i Superligaen og 1. division. Analysen transformerer et forretningsproblem til et datamining-problem, som løses ved hjælp af forskellige statistiske modeller. Formålet er at give anbefalinger til den kommercielle ledelse af VFF, baseret på modelresultater og med overvejelse af fremtidige datainitiativer til forbedring af analysen. 
+
+Projektet anvender CRISP-DM-modellen som analysegrundlag, hvilket involverer seks faser: 
+
+Bussines understanding: I forståelsesfasen af forretningen identificeres de primære målsætninger for VFF, herunder udviklingen af en prædiktionsmodel og forbedring datamodenheden. Dette leder til en forståelse af, hvordan en prædiktionsmodel kan nå sine mål ved at adressere problemstillinger omkring ressourceallokering, planlægning af markedsføringskampagner og ekstern kommunikation 
+
+Data understanding: Vi tager udgangspunkt i eksterne data fra DMI og Superstats til at lave en tidlig variabeludvælgelse, hvor vi undersøger potentielle variabler som vejrforhold, kampens tidspunkt og klubbens præstationer for deres indflydelse på tilskuerantal. Vi oplever udfordringer med data fra Superstats, en sekundær datakilde, og anbefaler fremadrettet brug af data fra DBU, en primær datakilde 
+
+Data preperation: I denne fase renses, transformerer og integrerer vi data fra forskellige kilder, inklusive historiske data om tilskuerantal, vejrdata fra DMI og statistikker fra Superstats. Denne proces sikrer, at data er klar til modellering og bør revurderes ved inddragelse af yderligere data 
+
+Modelling: Her anvendes flere statistiske metoder til at forudsige tilskuerantal. Forskellige modeller testes og evalueres for at finde den mest præcise og robuste model. Modelleringen danner grundlag for prædiktionerne og viser betydelig relevans af variabler som kampens type, sejrsstreak og lufttemperatur 
+
+Evaluation: Evalueringen af modellerne sker gennem k-fold cross-validation for at sikre pålidelige præstationer. Vi konkluderer, at internt data fra eksempelvis årskortholdere bør inddrages for at fuldende modellen, og der bør kigges på en mere dynamisk udvikling af variablerne, samt inddragelse af data fra andre ligaer 
+
+Deployment: I implementeringsfasen giver vi anbefalinger til VFF om nødvendige forberedelser før anvendelse af modellen til fremtidige kampe. Dette omfatter budgettering til forbedring af virksomhedens datamodenhedsniveau, uddannelse af personale og stiftelse af en dataenhed for at anvende indsigter strategisk til at forbedre markedsføring, eventplanlægning og andre kommercielle initiativer
+
+Konklusionen er, at VFF kan opnå en betydelig forretningsmæssig forvandling gennem datadrevne beslutninger, hvilket kræver dedikerede investeringer og en klar vej mod en datadrevet tilgang. 
+Projektets arbejde skal være reproducerbart. Det indebærer, at andre skal kunne køre den anvendte kode og opnå samme resultater, hvorfor Quarto og RStudio-miljøet anvendes. 
+
+# 2. Indledning
+
+I en tid hvor dataanalyse spiller en stor rolle i sportens verden, står VFF over for en væsentlig udfordring: At forudsige tilskuertal til hjemmekampe ved hjælp af statistiske modeller. Dette projekt kombinerer dataindsigter med en evaluering af klubbens datamodenhed for at udvikle en model til prædiktion af tilskuertal ved VFF's hjemmekampe. Modellen vil anvende variabler som vejrforhold og holdets præstationer, integreret med data fra både DMI og Superstats. Resultaterne fra dette projekt vil være afgørende for at understøtte VFF’s bestræbelser på at træffe datadrevne beslutninger. En sådan datadrevet tilgang vil være essentiel for klubbens stræben efter effektive markedsføringsstrategier og optimal ressourceallokering, hvilket vil bidrage til en stærkere økonomisk position.
+
+# 3. Problemformulering
+
+“Hvordan kan Viborg F.F. implementere effektive dataløsninger til forudsigelse af tilskuertal ved hjemmekampe, og på hvilken måde kan denne implementering optimere planlægning og beslutningstagning i den kommercielle afdeling?”
+
+Vi vil nu nedbryde denne problemstilling i specifikke underspørgsmål.
+Disse underspørgsmål er designet til at kaste lys over VFF's
+eksisterende praksis, udfordringer og potentiale inden for datadreven
+beslutningstagning og implementeringen af en prædiktionsmodel. Dette
+danner baggrund for følgende specifikke underspørgsmål, der vil blive
+udforsket i projektet:
+
+#### Prædiktionsmodel:
+
+Hvorledes kan en prædiktionsmodel anvendes til at forudsige
+tilskuerantallet, samt hvilke data og metoder er tilgængelige for at
+støtte forudsigelsen?
+
+#### Datamodenhed:
+
+Hvordan vurderes klubbens aktuelle datamodenhed ud fra indsamling af,
+opbevaring og analyse af data?
+
+#### Systemkrav:
+
+Hvilke systemkrav er nødvendige for at implementere en prædiktionsmodel,
+og hvordan matcher den eksisterende IT-infrastruktur og ressourcer i
+klubben?
+
+# 4. Afgrænsning
+
+Vores analyse vil være baseret på historisk data fra 2003 og fremefter,
+da ældre data ikke er tilgængelige via DMI. Covid-19-perioden er udeladt
+for at undgå potentielle forvridninger af resultaterne. Vi vil dog
+inkludere tilskuerstatistik fra perioder, hvor VFF ikke var i
+Superligaen, for at opnå en mere omfattende forståelse af faktorer, der
+påvirker tilskuertallene.
+
+Vi vil afgrænse os fra at arbejde med anvendelighed af
+prædiktionsmodellen, og læner os op ad at VFF er rustet til at vurdere
+anvendeligheden og værdien af denne. Derved vil vores primære fokus
+ligge på udviklingen af prædiktionsmodellen og implementering i forhold
+til datamodenhed og systemkrav.
+
+## 4.1 AI chatbots
+
+I udarbejdelsen af dette projekt blev ChatGPT 3.5 anvendt som en inspirations- og sparringspartner. ChatGPT 3.5 blev brugt til at foretage sproglige og grammatikmæssige forbedringer samt som støtte til programmering, statistik og grafer. Det er vigtigt at understrege, at der på intet tidspunkt blev anvendt ChatGPT 3.5-svar til direkte besvarelse af opgaven. Endvidere skal det nævnes, at ChatGPT 3.5 blev brugt til vurdering og revidering af projektet.   
+
+
+# 5. Videnskabsteori og Metode
+
+Vores forskningsdesign udspringer af den pragmatiske tilgang, hvor fokus
+ligger på praktisk relevans og løsninger, der kan anvendes i den
+virkelige verden. Problemstillingen centrerer sig om VFF’s udfordringer,
+og valget af pragmatisme giver os mulighed for at bruge gruppens
+tilegnet erfaringer og kreativitet til at løse problemet. Abduktion er
+den essentielle metode, hvor vi via undersøgelser søger efter, at opdage
+nye indsigter og sammenhænge.
+
+For at understøtte og udforske praktiske løsninger i forbindelse med VFF
+som professionel fodboldklub, bruger vi en kombination af kvalitative og
+kvantitative dataindsamlingsmetoder. Et afgørende aspekt er
+implementeringen af semistrukturerede ekspertinterviews med
+nøglepersoner fra klubben. (Se bilag 1)
+
+Ved at kombinere disse metoder stræber vi efter at opnå en
+helhedsforståelse af de specifikke udfordringer i VFF og potentialet i
+datadrevne beslutninger. Denne metodiske tilgang er designet til at
+skabe praktiske løsninger og anbefalinger. Dette understøtter den
+pragmatiske tilgang i projektet, hvor fokus er på at skabe praktisk
+værdi og effektive løsninger for klubben.
+
+Vi har brugt CRISP-DM analysemodellen som ramme for udviklingen af dette
+projekt, så dets elementer er blevet nøje integreret i indholdsdesignet.
+(Se bilag 5)
+
+## 5.1. Dataindsamling og Analyse
+
+### 5.1.1. Datakilder
+
+Til forretningsanalyse benytter vi førstehåndskilder fra
+virksomhedsbesøg (se bilag 6), semistrukturerede interviews og
+individuelle observationer (se bilag 7). Til prædiktionsmodellen bruger
+vi eksternt anvender vi sekundære data fra www.dmi.dk for relevante
+vejrforhold og sekundære data fra www.superstats.dk for historisk
+kampdata.
+
+### 5.1.2. Dataforberedelse
+
+En omfattende indsamling, datarensning samt standardisering heraf. Dette
+udføres for at sikre, at de indsamlede data er af tilstrækkelig kvalitet
+og danne en sammensat dataramme ud fra www.superstat.dk og www.dmi.dk,
+hvoraf dataene bliver anvendelige til statistisk modeludvikling.
+
+### 5.1.3. Statistisk modeludvikling
+
+Vi benytter os af den eksperimentelle metode og statistisk
+modeludvikling ved at anvende vores læring fra datakildeforståelse,
+programmering og statistical learning. Dette inkluderer også abduktion,
+hvor vi observerer små spor og udvikler nye basale forståelser i
+processen.
+
+### 5.1.4. Agil Projektstyring med SCRUM
+
+Vores projektstyring baserer sig på SCRUM-metoden, en agil tilgang med
+fokus på iteration og iterativt samarbejde. Vi kører med sprints for én
+uge ad gangen og daglige standups muliggør tilpasninger i takt med
+ændringer i krav og indsigter. Dette er eksekveret gennem en
+implementering af projektstyringsboard fra Trello på Microsoft teams.
+
+### 5.1.5. Tilgang til projektet
+
+Projektet indledes med kvalificerede gæt baseret på antagelser om virksomhedens datamodenhed og vigtige variabler. Vi erkender, at vores resultater ikke er endegyldige, men repræsenterer det bedste, gruppen kan opnå med den nuværende viden. Vi praktiserer en fallibilistisk tilgang og udnytter forskellige perspektiver i gruppen for at komme i mål med projektet. 
+Denne tilgang afspejler pragmatismens filosofi om at handle, erfare og løse konkrete problemer. Ved at integrere abduktion, eksperimentel metode og agil projektstyring tilgår vi problemstillingen med en kontinuerlig fleksibel og omstillingsparat tilgang, der sætter os i stand til at konstant tilpasse os undervejs og opnå meningsfulde resultater inden for tidsrammen. (Egholm, 2014) 
+
+## 5.2 Undersøgelsesdesign
+
+
+![Figur 1 - Undersøgelsesdesign](data/billeder/metode.png)
+ 
+
+Projektet indledes med kvalificerede gæt baseret på antagelser om
+virksomhedens datamodenhed og vigtige variabler. Vi erkender, at vores
+resultater ikke er endegyldige, men repræsenterer det bedste, gruppen
+kan opnå med den nuværende viden. Vi praktiserer en fallibilistisk
+tilgang og udnytter forskellige perspektiver i gruppen for at komme i
+mål med projektet.
+
+Denne tilgang afspejler pragmatismens filosofi om at handle, erfare og
+løse konkrete problemer. Ved at integrere abduktion, eksperimentel
+metode og agil projektstyring tilgår vi problemstillingen med en
+kontinuerlig fleksibel og omstillingsparat tilgang, der sætter os i
+stand til at konstant tilpasse os undervejs og opnå meningsfulde
+resultater inden for tidsrammen. (Egholm, 2014)
+
+# 6.	Analyse 
+
+## 6.1.	 Forretningsforståelse 
+
+For at få en dyb forståelse af forretningen er det afgørende at have kendskab til organisationen i projektet. Analysen af kulturen, organisationen og forretningsmodellen giver værdifuld information om virksomhedens drift, som danner grundlag for projektets strategi og handling. Det sikrer også tilpasning af løsninger og initiativer til organisationens behov og mål. 
+
+### 6.1.1.	Organisation og kultur 
+
+VFF selskabets hovedaktivitet er at drive professionel fodbold og anden hermed beslægtet virksomhed. (Beierholm, 2023) VFF er meget mere end et fodboldhold. Deres missionserklæring fokuserer på at skabe fællesskaber og oplevelser, der er blandt de bedste i Danmark. (VFF, 2023) På denne måde afgrænser dets formål, giver det identitet og skaber en motivationsfaktor, som hjælper med at guide virksomhedens beslutninger og strategier.  
+
+VFF beskrives bedst som en blanding af organiske og mekaniske organisatoriske egenskaber. Dette skyldes den komplekse og mangefacetterede karakter af at lede en sportsklub, hvilket kan kræve både fleksibilitet og tilpasningsevne samt strukturerede og standardiserede processer.  
+
+Denne struktur har dog givet plads til integration, så de forskellige afdelinger arbejder i harmoni for at nå målene. Dette indebærer naturligvis koordinering og samarbejde mellem forskellige enheder i VFF. Et tydeligt eksempel på dette er det tekniske teams deltagelse i marketingstrategier, der arbejder sammen om at promovere kampe og tiltrække fans.  
+
+VFF viser træk af en hybrid strategi. Der er en centralisering i beslutningstagning i den øverste ledelse og i strategiske aspekter under dens bestyrelses jurisdiktion, men der er nogle beslutninger, der er blevet uddelegeret til mellemledelsen med henblik på operationel funktion.  
+
+Ligeledes kan vi, hvis vi fokuserer på Henry Mintzbergs seks byggeblokke og organisationsformer, se, at VFF har vedtaget fagbureaukratiet. (Se bilag 8) Selvom vi taler om en flad struktur, er et aspekt, der kendetegner dem, arbejdsdelingen og specialiserede roller. Organisationen er som oftest besat af professionelle som har ekspertise indenfor det område, som gør sig gældende for virksomhedens interessepunkter. (Kousholt, 2019, p. 99)  
+
+Når vi taler om organisationskultur, henviser vi til forskellige faktorer lige fra organisationstypen, virksomhedens egenart og medarbejdernes egenart. (Se bilag 9)  
+
+VFF er kendetegnet ved en missionskultur, den har en klar idé om sin mission og vision, hvad dens ambitioner er, dens strategiske prioriteter og alt dette udgør rammerne for handling. (VFF, 2023) Værdigrundlaget er tæt forbundet med det rationelle værdigrundlag. (Hansen, Heide, Knærkegaard, & Sørensen, 2013) VFF har en konkurrencedygtig og resultatorienteret mentalitet, både på det sportslige og kommercielle område. 
+
+### 6.1.2.	Business Model Canvas 
+
+VFF har etableret en robust forretningsmodel og med over 355 partnerskaber har klubben et solidt fundament og fokus på kerneaktiviteter understøttet af nødvendige ressourcer. Dog står klubben med et ønske om at forudsige tilskuertallet ved hjemmekampe, en faktor der direkte påvirker indtægtskilder og kunderelationer. For at styrke beslutningstagning og planlægning erkender VFF behovet for prædiktionsmodeller og datadrevne løsninger. Disse værktøjer vil ikke kun nøjagtigt estimere tilskuertallet, men også optimere ressourceallokering, udvikle effektive markedsføringsstrategier og justere billetpriser. Denne strategi, forankret i Business Model Canvas-elementer, styrker VFF's position på markedet, forbedrer kluboplevelsen og bidrager væsentligt til økonomisk fundament og konkurrenceevne. (Se bilag 10)
+
+## 6.2.	Datamodenhed – Alexandra Modellen 
+
+VFF viser tegn på at befinde sig i 2. fase af datamodenheds Alexandra-modellen (Kølsen, Nielsen, & Bækby, 2017) (Se bilag 11). Virksomheden har et højt ønske om at centralisere og automatisere dataindsamling fra forskellige kilder som hjemmesider, onlinebutikker og billetsystemer. Desuden er der en bevidsthed om vigtigheden af dataintegration og rapportering, hvilket understøttes af overvejelser om brugen af Business Intelligence-værktøjer. Dog er der stadig en udfordring med manuel indsamling og integration af data fra fans og tilskuer, hvilket indikerer behovet for en mere struktureret tilgang. Virksomheden bør fortsætte med at investere i automatisering, standardisering og uddannelse af medarbejdere for at avancere yderligere i datamodenheden. 
+
+## 6.3.	Udvikling af prædiktive løsninger  
+
+At forudsige tilskuertal for VFF's hjemmekampe er vitalt for klubbens effektivitet og strategi. Nøjagtige forudsigelser hjælper med at allokere ressourcer effektivt, forbedre markedsføringsstrategier, og øge fan engagement. De hjælper også med at tilpasse events og services til publikums størrelse. 
+
+Model til forudsigelse inkluderer variabler som ugenummer, hjemme- og udeholdets score, vejrforhold, sejrsstreak, og kampens type (A, B, C) for realistisk planlægning. 
+
+ 
+
+### 6.3.1.	Eksplorativ dataanalyse 
+
+I vores eksplorative dataanalyse har vi fokuseret på datasættet 'final_data'. For at behandle karakterer som kategoriske variabler, omdanner vi dem til faktorer i R, hvilket automatisk skaber dummy-variable for hvert niveau. 
+
+Vi anvender korrelationsmatrix og corrplot-funktionen til at visualisere relationer mellem numeriske variabler. Dette giver os indsigt i, hvilke variabler der korrelerer stærkt med hinanden. For eksempel, en stærk positiv korrelation mellem 'TypeA' og 'Tilskuere' indikerer, at Type A kampe ofte har højere tilskuertal. 
+
+
+```{r, echo=FALSE}
+#| fig-cap: Figur 2 - Varmekorrelationsplot
+#| warning: false
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", tl.col = "black", tl.srt = 100)
+```
+
+
+
+Varmekortet bruges til at afsløre korrelationers styrke og retning, med blå nuancer for positive og røde for negative korrelationer. Jo mørkere skygge, desto stærkere er korrelationen. 
+
+
+
+```{r, echo=FALSE}
+#| fig-cap: Figur 3 - Korrelationsmatrix
+#| warning: false
+pairs(numeriske_variabler)
+```
+
+
+Gitteret af plots præsenterer parvise relationer mellem numeriske variabler gennem spredningsdiagrammer, hvilket er nyttigt til at identificere lineære relationer og outliers. 
+
+
+
+ 
+```{r, echo=FALSE}
+#| fig-cap: Figur 4 - A, B, C Violinplot
+#| warning: false
+ggplot(test3, aes(x=Type, y = Tilskuere)) +
+  geom_violin(aes(fill = Type), draw_quantiles = c(0.25, 0.5, 0.75), color = "white") +
+  geom_jitter(aes(color = Type), width = 0.1) +
+  scale_fill_manual(values = c("A" = "skyblue", "B" = "lightgreen", "C" = "lightcoral")) +
+  scale_color_manual(values = c("A" = "darkblue", "B" = "darkgreen", "C" = "darkred")) +
+  labs(title = "Violin Plot af Tilskuere på Type set 2003-2023", x = "Type", y = "Tilskuere")
+```
+
+Med ggplot2 laver vi violinplots for at undersøge fordelingen og tætheden af tilskuertal baseret på kamp typer (Type A, B, C) og ugedage. Disse plots afslører tendenser og variationer i tilskuertal, hvilket er afgørende for at forstå, hvilke kampkategorier der generelt tiltrækker flere tilskuere og hvornår opmødet varierer mest. For eksempel viser Type A kampe en bred fordeling, mens Type B og C kampe viser henholdsvis mere konsistent lavere og bredere fordelinger med højere medianer.
+
+
+### 6.3.2.	Modelopbygning 
+
+For at udvikle og evaluere en statistisk model med datasættet 'final_data', anvender vi først 'model.matrix'-funktionen for at omdanne dette datasæt til en matrix kaldet x, som er essentiel for modelleringen. Den afhængige variabel 'Tilskuere' isoleres som y. 
+
+For reproducerbarhed anvender vi en fast seed (4) og opdeler datasættet tilfældigt i 60% træningssæt og 40% testsæt gennem 'sample'-funktionen. Dette sikrer, at vi træner modellen på et repræsentativt datasæt og evaluerer dens præstation på et separat sæt. 
+
+
+```{r, echo=FALSE}
+set.seed(4)
+train_01 <- sample(1:nrow(x), nrow(x) * 0.6)
+remaining_01 <- setdiff(1:nrow(x), train_01)
+test_01 <- remaining_01
+x_train <- x[train_01, ]
+y_train <- y[train_01]
+x_test <- x[test_01, ]
+y_test <- y[test_01]
+```
+
+Efter træningen bruger vi testsættet til at beregne modellens præstationer gennem mål som Mean Squared Error (MSE). Disse metrikker hjælper os med at forstå, hvordan modellen vil fungere på nye data. 
+
+Desuden gennemfører vi en 10 k-fold validering for at sikre modellens robusthed og pålidelighed. Dette valideringstrin er afgørende for at undgå overfitting og sikre, at modellen generelt er præcis. 
+
+
+
+ 
+
+### 6.3.3.	Modelopbygning og træning 
+
+I den simple lineære model uden features forudsiger vi gennemsnittet af Tilskuere. MSE for denne model er 3.522.886 og RMSE er 1.877. 
+
+
+Med Ridge-regression anvender vi en række lambda-værdier og bruger glmnet med alpha = 0. MSE og RMSE er henholdsvis 1.460.162 og RMSE 1.208, hvilket indikerer en forbedring sammenlignet med den simple model. 
+
+Lasso-regressionen udfører regulering for at fremme sparsomhed, med MSE 1.394.017 og RMSE 1.180, hvilket viser bedre præstation end tidligere modeller. 
+
+Elastic net kombinerer Lasso og Ridge, og ved alpha = 0,9 får vi MSE 1.392.512 og RMSE 1.180, hvilket indikerer en lignende præstation som Lasso. 
+
+
+Den overfittet model tager alle variabler fra datasættet her en MSE 1.522.237 og RMSE 1.233. 
+
+For at forudsige tilskuertal, bruger vi signifikante variabler som Temp, Streak, Wind, Liga, Type, LokalOpgør og UN. Vi justerer disse variabler for specifikke scenarier og kampdage, baseret på gennemsnitlige vejrdata og nuværende kampresultater. 
+
+* OB har en MSE 1.504.908 og RMSE 1.226 
+* RFC har en MSE 2.138.336 og RMSE 1.462 
+* BIF har en MSE 1.465.700 og RMSE 1.211
+
+
+
+Vores prædiktioner for de enkelte kampe er ud fra disse variabler således:
+
+OB = 4.299 
+
+RFC = 5.619 
+
+BIF = 6.824 
+
+Når vi fokuserer på de tre kampe, er det vigtigt at bemærke, at de i praksis er mere indbyrdes afhængige, end det umiddelbart fremgår. Vi udarbejder derfor forudsigelser for de næste tre kampe. Efter den første kamp er spillet, vil det være nødvendigt at indsamle nye data for at opdatere og forbedre prædiktionerne for de følgende kampe. 
+
+ 
+
+### 6.3.4.	Modelvurdering 
+
+```{r, echo=FALSE}
+#| fig-cap: Figur 5 - Konkurrerende modeller
+#| warning: false
+ggplot(results_df, aes(x = reorder(Model, -MSE), y = MSE, fill = Model)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(title = "Konkurrerende modeller",
+       x = "Model",
+       y = "Mean Squared Error (MSE)") +
+  theme_minimal()
+```
+
+
+Det er tydeligt, at den simple model uden features performer dårligst, hvilket stemmer overens med vores oprindelige antagelse. Elastic net-modellen viser sig at være den stærkeste blandt de konkurrerende modeller. Dette skyldes dens evne til at regulere, hvilket antyder, at regulering er effektiv til at forebygge overfitting og forbedre modellens evne til at generalisere. 
+
+ 
+
+De velovervejede modeller er ikke nødvendigvis de bedste for den specifikke kampsituation, men de giver stadig et overblik over generelle tendenser. De velovervejede modeller performer generelt ikke markant dårligere end Elastic net-modellen. Derfor er det også vigtigt at overveje, hvor let modellen er at forstå og anvende i praksis. Valget af variabler, specielt kampkategorierne A, B, og C, samt temperatur og streak, spiller en betydelig rolle. Disse faktorer er noget, VFF kan forholde sig til og fortsat arbejde med fremadrettet. Tilpasning af modellen over tid er essentielt for at sikre, at den fortsat kan levere nøjagtige forudsigelser for klubben. 
+
+
+## 6.4.	FURPS & MOSCOW 
+
+Analysen, baseret på FURPS og MOSCOW modellerne, understreger behovet for en sofistikeret og pålidelig tilskuerprædiktionsmodel for VFFs hjemmekampe.
+
+Udviklingen af en succesfuld tilskuerprædiktionsmodel kræver en kombination af avanceret funktionalitet, pålidelighed, performance og stærk support. For pålidelighed er datakilder og advarsler ved ændringer afgørende, mens mekanismer til at håndtere outliers kan forbedre modellens nøjagtighed. Behovet for hurtig beregningstid, skalerbarhed og løbende optimering af modellen er også et krav, hvor autentifikation og fjernelse af unødvendige variabler kan forbedre dens effektivitet. Endelig er grundig dokumentation, dedikeret support og nem integration af nye datakilder afgørende for at opretholde en brugervenlig og teknisk robust model. Alt i alt er denne tilgang afgørende for at skabe en model, der ikke kun er teknisk avanceret, men også praktisk anvendelig og pålidelig i realverdenssituationer. (Se bilag 13) 
+
+## 6.5.	Wixom's Data Monetization Model 
+
+I analysen anvender vi denne model til at adressere VFF’s nuværende udfordringer og fremtidige muligheder for at tage datadrevne beslutninger. (Se bilag 14) 
+
+VFF's ambition om et datawarehouse er afgørende for at opnå et niveau, hvor de vil være i stand til at kunne forbedre deres situation internt i klubben. Implementering af et sådant system vil standardisere og konsolidere data på tværs af afdelinger, hvilket sikrer ensartethed og konsistens. Dette system skal understøtte analyser og integrere data fra billetsalg, spillerstatistik, Kløvershoppen, og sponsoraftaler, samt tilbyde sikkerheds- og skaleringsegenskaber. 
+
+Med etableret dataintegration kan VFF udnytte Business Intelligence-værktøjer som PowerBI til at træffe datadrevne beslutninger. Langsigtet kan VFF udvikle sig til at anvende data proaktivt gennem Machine Learning. Sådanne analyser kan forbedre forståelsen af fansenes adfærd og mønstre, hvilket er centralt i dette projekt. Specifikt kan Machine Learning bruges til at forudsige antallet af tilskuere til kampe, hvilket muliggør mere præcis ressourceallokering, reducerer spild og sparer penge. 
+
+Endelig vil VFF's evne til at forstå deres fans, tilskuer og sponsorer forbedres betydeligt. Med centraliseret data, kan VFF udføre tværafdelingsanalyser fra et centralt datacenter, hvilket giver dybere indsigter og støtter datadrevne beslutninger. 
+
+## 6.6.	Datastack 
+
+Den foreslåede datastack (Se bilag 15) til VFF viser en omfattende og integreret tilgang til dataindsamling, analyse og styring. Ved at kombinere værktøjer fra Azure pakken, får VFF mulighed for at optimere deres datastruktur og forbedre forretningsprocesser på tværs af forskellige områder, der samlet set muliggør en sammenhængende tilgang til datahåndtering for VFF, hvilket kan styrke både forretnings- og sportsrelaterede beslutningsprocesser.
+
+## 6.7.	Forandringsledelse 
+
+For at sikre succes i forandringsinitiativer er det afgørende at forberede organisationen, da ændringer påvirker flere aspekter. Leavitt’s systemmodel, illustreret ved STOP-modellen, opdeler virksomheden i fire delsystemer, der er indbyrdes afhængige: Struktur, Teknologi, Opgaver og Personer/Aktører. Analysen af hver komponent inden for VFF viser behovet for ændringer på tværs af organisationen. Implementering af dataløsninger og prædiktionsmodeller vil kræve ændringer i teknologi, organisatorisk, medarbejderfærdigheder og arbejdsopgaver. Disse ændringer vil være afgørende for at forbedre markedsføring, og forudsige tilskuermønstre og derved optimere billetsalg. 
+
+Desuden har udvidelsen til Leavitt-Ry-modellen tilføjet yderligere elementer såsom vision, værdier, belønningssystemer, fysiske rammer, kultur og historie. Disse faktorer spiller en betydelig rolle i at understøtte forandringsprocessen, hvor visionen og værdierne former retningen for virksomheden, og kultur samt historie påvirker, hvordan medarbejdere interagerer og håndterer forandringer. 
+
+Implementeringen af ændringer vil have en bred indvirkning på hele organisationen, og det er nødvendigt at forstå, hvordan disse elementer kan integreres for at sikre en effektiv og holistisk tilgang til forandringsledelse. (Se bilag 16) 
+
+## 6.8.	CRISP-DM
+Vores dataanalyse projekt har igennem hele processen været centreret omkring, CRISP-DM. Vores analyser og resultater afspejler en agil og iterativ arbejdstilgang, med fokus på at forbedre og revurdere opnåede milepæle. På den måde var det tiltænkt, at vores projekt kunne opfattes, så holistisk som muligt, samtidig med at det opfattes som konkret og fokuseret.
+
+### 6.8.1.	Business Understanding 
+Indebærer at vi forstår virksomhedens problemstillinger og de mål som virksomheden kan opnå gennem dataanalyse. Denne forståelse blev dannet gennem flere interviews med nøglepersoner i virksomheden, samt oplæg og egne observationer. I denne proces overvejer vi hvordan de forskellige mål og problemstillinger er knyttet sammen på tværs af organisationsstrukturen og –kulturen. For at komme i mål med det blev der udarbejdet et sæt af spørgsmål som identificerer de mest kritiske faktorer, samt de eventuelle udfordringer som skal tages højde for i virksomheden. Her blev der lagt meget vægt på spørgsmål der kunne vurdere deres nuværende datamodenhedsniveau samt en indikation af de afgørende variabler ud fra nøglepersoners nuværende forståelse.
+
+### 6.8.2.	Data Understanding 
+Dette punkt, tager udgangspunkt i vores første møde med relevant rådata. Fra undersøgelse af datakilden, til forståelse af hvad dataen består af, samt hvor pålidelig den er og hvilken kvalitet de er i. I denne proces gjorde vi også brug af en tidlig variabeludvælgelse, for at mindske unødvendige data fra starten. Dette blev gjort efter vores webscrapping og get request, af både DMI og Superstats. Det blev gjort på en agil og eftertænksom måde, for at mindske fejlsortering af variabler.
+I forhold til datakvaliteten, stødte vi på nogle væsentlige problematikker i starten af vores projekt. En af de problematikker; var formateringen af tilskuerantallet. Da vi sammensatte de forskellige variabler fra den scrapede dataframe, opdagede vi at separatoren, (komma eller punktum) der separerer tusinde, var blevet transformeret udenom vores vilje. Det resulterede i forkerte data i vores tilskuer kolonne, som samtidig gjorde at vores data blev usammenhængende og inkonsekvent. Vi formåede at finde en lang og smertefuld løsning, som vi senere kunne have gjort bedre med én simpel linje kode.
+
+### 6.8.3.	Data Preperation 
+Ved dette punkt rensede vi ud i vores data (gjorde det tidy) samtidig med at vi dannede nye variabler ud fra eksisterende data. Samtidige transformerede vi data fra en type til en anden, f.eks, ved kvalitative variabler, som vi gjorde til faktor(dummy).
+Ydermere i dette punkt, sammensatte vi også de andre dataframes vi havde scrapet, til en dataframe, for at gøre arbejdsprocessen nemmere. Her skal det påpeges at det data fremgår forskelligt i de forskellige datasæt som er tilgængelige hos superstats, derfor har vi undladt nogle af variablerne.
+
+### 6.8.4.	Modelling 
+
+Efter vi har håndteret dataen, og fået dannet de variabler vi mente havde mest relevans for vores projekt. Opdelte vi dataen i træning og testsæt. Herefter så vi hvordan vores forskellige modeller (Simpel model, Overfittet model og velovervejede modeller) klarede sig. Det gjorde vi ved at se på deres test MSE, og dermed kunne vi se den bedste model, som giver den mest præcise prædiktion.
+
+### 6.8.5.	Evaluation 
+
+Efter en grundig evaluering af tilskuernes adfærd ud fra det tilgængelige data, kan vi vurdere at der kan være behov for at indhente internt data til at forbedre disse analyser. Her ser vi et potentiale i at kigge på årskortholdere, deres fremmøde til kampene, bopæl (postnummer). Dette mener vi kunne lægge en god baseline for prædiktionerne til de fremtidige kampe. Derudover, om kapaciteten og ressourcerne er til det, vil det være oplagt at teste alle vejrvariabler af og kigger mere på tendenser og vejrudvikling op til kampene. For at forbedre det sportslige data vil man med fordel kunne skifte til DBU for at få et mere ensartet dataudtræk på tværs af ligaerne og sæsonerne.
+
+### 6.8.6.	Deployment 
+
+For at kunne implementere vores produkt og gøre det anvendeligt, vil vi anbefale at der bliver opstillet en datastack i virksomheden. Dette kan gøres trinvist og uafhængigt, men flere af produkterne i datastacken er nødvendige for at drage nytte af data i virksomheden og man på den måde kan inddrage det i den daglige drift, ved at tage faktabaserede beslutninger. Dernæst er oplæring af personale et grundlæggende trin for at kunne implementere prædiktionsmodellen i virksomheden. 
+
+
+# 7.	Anbefalinger
+
+Anbefalinger til VFF for at forbedre deres datamodenhed. 
+
+1. Budgettering af ressourcer:
+
+VFF bør afsætte et specifikt budget til at forbedre deres datamodenhed. Dette inkluderer investeringer i cloud-løsninger, ansættelse af specialiseret personale og uddannelse, som er nødvendige første skridt for at starte processen. 
+
+2. Systemindkøb:
+
+Det anbefales at VFF implementerer en Microsoft-baseret Data Stack, herunder Azure cloud-løsninger. Dette er kompatibelt med deres nuværende brug af PowerBI og vil støtte en mere integreret datainfrastruktur. (se bilag 15) 
+
+3. Rekruttering og uddannelse: 
+
+VFF skal ansætte dataanalytikere, datastewards eller dataops, for at håndtere migrationen til Azure og håndtere data fra forskellige kanaler. Det er samtidig vigtigt at tilbyde uddannelse eller certificeringer, specielt i forhold til Microsofts platforme og værktøjer. (se bilag 14) 
+
+4. Fremme en datakultur:
+
+At skabe og støtte en dataorienteret kultur i organisationen er afgørende for medarbejdermotivationen. Dette kan inkludere træningsprogrammer og kampagner for at øge bevidstheden om vigtigheden af datadrevne beslutninger. (se bilag 16) 
+
+5. Master Data og Rapportering:
+
+Centralisering og konsolidering af data vil sikre et pålideligt og ensartet datasæt på tværs af organisationen. Effektive og automatiserede rapporteringssystemer, såsom dem der benytter Power BI, vil gøre data mere tilgængelige og reducere afhængigheden af enkeltpersoner. (se bilag 14) 
+
+6. Machine Learning:
+
+Med ovenstående skridt på plads, kan VFF begynde at udnytte Machine Learning til at udvikle egne prædiktive modeller. Dette kræver en solid forståelse af de data og variabler, der påvirker tilskuertal, for derefter at kunne udvikle og forfine disse modeller. (se bilag 14) 
+
+Disse anbefalinger vil kunne hjælpe VFF med at nå et højere niveau af datamodenhed, som vil gavne deres evne til at træffe informerede, datadrevne beslutninger, der i sidste ende kan øge omsætningen i virksomheden. 
+
+
+# 8.	Konklusion 
+
+VFF står over for en afgørende mulighed for at transformere deres forretningspraksis gennem en datadrevet tilgang. Vores analyse af organisationens datamodenhed har afsløret behovet for en dybere integration af data i beslutningsprocesser, hvilket kræver en betydelig kulturomstilling, hvor data anerkendes som en kritisk ressource for at maksimere potentialet af prædiktive analyser.
+
+Gennem udviklingen af en prædiktionsmodel har vi identificeret muligheden for at forudsige tilskuertal ved hjemmekampe, hvilket kan være en værdifuld ressource for VFF's markedsføringsstrategier og ressourceallokering. Det kræver en gennemført implementering af denne model, mere end blot teknologisk kapacitet. Det kræver øget engagement i ledelsen for at fremme denne forandringsproces. Investering i uddannelse og en tydelig kommunikation om værdien af data er vigtigt for at kunne træffe faktabaserede beslutninger. 
+
+For at styrke organisationens fremtidige position i sportsverdenen anbefales det at etablere et dedikeret team til at lede og udvikle datadrevne initiativer, samt skabe klare strategier for integreringen af prædiktionsmodellen i den overordnede forretningsplan. Investering i medarbejdere for at opbygge datamæssige færdigheder vil være afgørende, ligesom evaluering af modellens præstation for at sikre kontinuerlig drift og optimering.
+
+Samlet set peger vores integrerede analyse mod en klart defineret vej for VFF, mod en mere datadrevet tilgang til deres forretningsstrategi. Ved at omfavne denne tilgang, vil VFF være i stand til at træffe bedre informerede beslutninger, styrke deres konkurrenceevne og positionere sig som en fremtrædende aktør i sportsverdenen.
+
+# 9. Litteraturliste/References
+
+- Egholm, L. (2014). *Videnskabsteori, perspektiver på organisationer og samfund*.
+- Beierholm. (2023). *Årsrapport for regnskabsåret 01.07.22-30.06.23.* Viborg. [Tilgængelig her](https://www.vff.dk/viborg-f-f/vff-aarsrapporter).
+- Kousholt, B. (2019). *Organisation og mennesker*. Praxis - Nyt Teknisk Forlag.
+- Kølsen, C., Nielsen, L. L., & Bækby, R. (2017). *Find vej i din dataindsats*. Alexandra Instituttet for Industriens Fond.
+- Hansen, K., Heide, A., Knærkegaard, P. L., & Sørensen, H. B. (2013). *Organisation - videregående uddannelser*. Hans Reitzels Forlag.
+- MindTools. (u.d.). [Leavitt’s Diamond. An integrated approach to change](https://www.mindtools.com/ac3k6vj/leavitts-diamond) (Bilag 16).
+- NET2CHANGE. (u.d.). [Leavitt-Ry modellen](https://net2change.dk/leavitt-ry-modellen/) (Bilag 16).
+- Thorborg, S. (2013). *Forandringsledelse - En grundbog*. København: Hans Reitzels Forlag (Bilag 16).
+- VFF. (01. 11 2023). *Dania x Viborg FF. Data - ja selvfølgelig, men hvordan…* Viborg, Danmark.
+- VFF Bestyrelsen [Tilgængelig her](https://www.vff.dk/viborg-f-f/bestyrelsen).
+- VFF organisation [Tilgængelig her](https://www.vff.dk/viborg-f-f/kontaktinfo).
+- Wixom, B. et al., (2023). *Data is everybody’s business: The fundamentals of data monetization*. The MIT Press 26.09.2023 (Bilag 14).
+- ChatGPT 3.5 [OpenAI Chat](https://chat.openai.com/chat)
+
+
+
+# 10.	Bilag 
+
+1. Interviewguide
+
+2. Interview Daniel Behr
+
+3. Interview Rasmus Ingeman 
+
+4. Interview Daniel 
+
+5. CRISP-DM
+
+6. PowerPoint fra VFF
+
+7. Observationer – VFF og stadion 01.11.2023
+
+8. VFF Organisatoriske elementer - Henry Mintzbergs organisationsmodel 
+
+9. Virksomhedskultur - Quinn og Rohrbaughs modellen 
+
+10. Business Model Canvas 
+
+11. Alexandra Modellen (2 dokumenter)
+
+12. Kode 
+
+13. FURPS & MOSCOW 
+
+14. Wixom’s Data Monetization Model 
+
+15. VFF DataStack 
+
+16. Forandringsledelse – Leavitts (STOP model) og Leavitts-Ry modellen
+
+
+
+# 11.	Tabel over figurer 
+
+1. Undersøgelsesdesign
+
+2. Varmekorrelationsplot 
+
+3. Korrelationsmatrix 
+
+4. A, B, C Violinplot 
+
+5. Konkurrerende modeller
