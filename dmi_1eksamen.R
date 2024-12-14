@@ -1,7 +1,7 @@
 pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl, tibble, dslabs, jsonlite, rjson)
 
 # API: DMI
-# Lave tom tibble til at indsætte dmi-data
+# Laver tom tibble til at indsætte dmi-data
 samlet_dmi_flot <- tibble()
 
 # Lave liste over datoer der skal hentes data fra.
