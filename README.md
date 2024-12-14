@@ -1,4 +1,4 @@
-# ved_ikke_hvad_jeg_laver
+# Gruppe 10 - 1. Eksamen
 
 Rækkefølge:
 1. vff_1eksamen - her gør vi guld-dataen klar til videre forarbejdning.
