@@ -1,5 +1,7 @@
 pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl, tibble, dslabs, jsonlite, rjson)
 
+View(sæson)
+
 # Webscraping: Superstats.dk
 base_url <- "https://superstats.dk/program?season="
 
