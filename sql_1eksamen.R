@@ -16,7 +16,7 @@ dbListTables(connection)
 
 # Få rettet query når alle tabeller er klar
 samlet_sql_query <- dbGetQuery(connection,
-           "select vff.dato, vff.ugedag, vff.ude, vff.mean_spild, vff.sidste_spild, vff.mean_afhentningsgrad,
+           "select vff.dato, vff.ugedag, vff.ude, vff.antal_spild, vff.mean_spild, vff.sidste_spild, vff.mean_afhentningsgrad,
            superstats.kampstart, superstats.runde, superstats.mean_tilskuere, superstats.sidste_tilskuer_antal,
            dmi.tid, dmi.temp_mean_past1h, dmi.precip_dur_past1h, dmi.precip_past1h, dmi.wind_speed_past1h
            from vff
@@ -59,6 +59,7 @@ samlet_data_flot <- samlet_data |>
          dag_type,
          runde,
          ude,
+         antal_spild,
          mean_spild,
          sidste_spild,
          mean_afhentningsgrad,
@@ -103,3 +104,4 @@ samlet_data_flot <- samlet_data_flot |>
   mutate(
   kampstart = parse_time(sprintf("%02d:%02d", hour(kampstart), minute(kampstart)))
   )
+
