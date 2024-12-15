@@ -25,7 +25,7 @@ for (i in 1:6) {
       values_to = "dato",
       values_drop_na = TRUE
     ) |> 
-    separate(dato, into = c("dag", "måned","tid"), sep = "/| ") |> 
+    separate(dato, into = c("dag", "måned","kampstart"), sep = "/| ") |> 
     mutate(
       tilskuere = as.numeric(gsub("\\.", "", ...5)), #gsub fjerner "." og skifter det ud med "", altså ingenting.
       runde = parse_number(runde),
@@ -72,16 +72,15 @@ for (i in 1:7) {
       values_to = "dato",
       values_drop_na = TRUE
     ) |> 
-    separate(dato, into = c("dag", "måned","tid"), sep = "/| ") |> 
+    separate(dato, into = c("dag", "måned","kampstart"), sep = "/| ") |> 
     mutate(
       tilskuere = as.numeric(gsub("\\.", "", ...5)), #gsub fjerner "." og skifter det ud med "", altså ingenting.
       runde = parse_number(runde),
       år = if_else(måned %in% c("02", "03", "04", "05"), sæson[i],
                    sæson[i] - 1),
-      dato = make_date(år, måned, dag),
-      tid = parse_time(tid)
+      dato = make_date(år, måned, dag)
     ) |> 
-    select(dato, år, måned, dag, tid, runde, hjemme, ude, tilskuere)
+    select(dato, år, måned, dag, kampstart, runde, hjemme, ude, tilskuere)
   superstats_combined <- bind_rows(superstats_combined, bind_clean)
 }
 
