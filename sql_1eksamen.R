@@ -4,7 +4,7 @@ vff <- readRDS("data/vff.rds")
 dmi <- readRDS("data/dmi.rds")
 superstats <- readRDS("data/superstats.rds")
 
-mean(superstats$tilskuere)
+
 
 connection <- dbConnect(SQLite(), "vff.db") 
 
@@ -29,7 +29,7 @@ write_rds(samlet_sql_query, "samlet_sql_query.rds")
 
 dbDisconnect(connection)
 
-samlet_data <- as_tibble(samlet_vff) |> 
+samlet_data <- as_tibble(samlet_sql_query) |> 
   mutate(
     dato = as.Date(dato, origin = "1970-01-01"),
     kampstart = hms(parse_time(kampstart)),
@@ -69,14 +69,37 @@ samlet_data_flot <- samlet_data |>
          mean_precip_6h,
          mean_precip_dur_6h,
          mean_wind_speed_6h
-         ) # y-variable + 15 + tidspunktskategori, lokalopgør, weekend,
+         ) # y-variable + 15 + tidspunktskategori, lokalopgør, afstand
 
 
-samlet_data_flot |> 
+# Tilføj lokalopgør baseret på afstand, og smider det ind i en dataframe. 
+# Afstanden er ca. afrundet afstand taget fra google maps 
+afstande <- data.frame(
+  klub = c("FCM", "SIF", "RFC", "AGF", "AaB", "BIF", "FCK", "FCN", "ACH", "SJF", "VB", "OB", "HOB", "EFB", "LBK", "HIF", "FCV"),
+  afstand_km = c(40, 50, 60, 80, 90, 200, 220, 240, 230, 150, 120, 130, 65, 175, 240, 150, 95)
+)
+
+samlet_data_afstand <- samlet_data_flot |> 
+  left_join(afstande, by = c("ude" = "klub")) |> 
+  mutate(
+    lokalt_opgoer = ifelse(afstand_km <= 85, 1, 0)
+  ) |> 
+  relocate(afstand_km, lokalt_opgoer, .after = ude)  # Flyt 'lokalt_opgoer' efter 'ude'
+
+# Tilføj en ny kolonne 'tidspunktskategori'
+samlet_data_flot <- samlet_data_afstand |> 
+  mutate(
+    tidspunktskategori = case_when(
+      as.numeric(substr(kampstart, 1, 2)) < 15 ~ "Middag",
+      as.numeric(substr(kampstart, 1, 2)) < 18 ~ "Eftermiddag",
+      TRUE ~ "Aften"
+    )
+  ) |> 
+  relocate(
+    tidspunktskategori, .after = dag_type
+  )
+
+samlet_data_flot <- samlet_data_flot |> 
   mutate(
   kampstart = parse_time(sprintf("%02d:%02d", hour(kampstart), minute(kampstart)))
   )
-
-testettt <- read_csv("tidy_data.csv")
-
-

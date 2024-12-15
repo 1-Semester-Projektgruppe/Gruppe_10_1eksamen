@@ -54,7 +54,7 @@ for (dato_x in alle_datoer) {
 
 dmi <- samlet_dmi_flot |> 
   mutate(
-    tid = as.character(tid)
+    tid = as.character(tid) 
   )
 
 write_rds(dmi, "data/dmi.rds")
