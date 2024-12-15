@@ -45,8 +45,8 @@ samlet_data_flot <- samlet_data |>
   group_by(dato) |> 
   mutate(
     mean_temp_6h = round(mean(temp_mean_past1h), 1),
-    mean_precip_6h = round(mean(precip_past1h), 1),
-    mean_precip_dur_6h = round(mean(precip_dur_past1h), 1),
+    mean_precip_6h = round(mean(precip_past1h, na.rm = TRUE), 1),
+    mean_precip_dur_6h = round(mean(precip_dur_past1h, na.rm = TRUE), 1),
     mean_wind_speed_6h = round(mean(wind_speed_past1h), 1),
     dag_type = ifelse(ugedag %in% c("lørdag", "søndag"), "Weekend", "Hverdag"),
     mean_tilskuer_scoring = round((mean_tilskuere / overall_mean_tilskuere), 1)
@@ -105,3 +105,18 @@ samlet_data_flot <- samlet_data_flot |>
   kampstart = parse_time(sprintf("%02d:%02d", hour(kampstart), minute(kampstart)))
   )
 
+# Machine Learning ------------------------------------------------------
+
+# Udtræk kun de numeriske kolonner
+numeriske_variabler <- samlet_data_flot[, sapply(samlet_data_flot, is.numeric)]  
+
+# Opret en korrelationsmatrix
+cor_matrix <- cor(numeriske_variabler)
+
+cor_matrix[is.na(cor_matrix)] <- 0
+
+library(corrplot)
+# Opret et varmekortgraf
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", tl.col = "black", tl.srt = 100)
+
+pairs(numeriske_variabler)
