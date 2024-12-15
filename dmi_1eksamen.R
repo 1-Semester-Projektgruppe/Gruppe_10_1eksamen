@@ -52,7 +52,14 @@ for (dato_x in alle_datoer) {
   }
 }
 
-write_rds(samlet_flot_dmi, "data/dmi.rds")
+dmi <- samlet_dmi_flot |> 
+  mutate(
+    tid = as.character(tid)
+  )
+
+write_rds(dmi, "data/dmi.rds")
+
+write.csv(dmi, "data/dmi.csv")
 
 dmi <- read_rds("data/dmi.rds")
 
