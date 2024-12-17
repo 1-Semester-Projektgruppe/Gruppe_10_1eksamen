@@ -24,10 +24,10 @@ samlet_sql_query <- dbGetQuery(connection,
            left join dmi ON vff.dato = dmi.dato
            where dmi.temp_mean_past1h is not NULL")
 
-# Eksporterer samlet tabel i rds-fil til videre forarbejdning
-write_rds(samlet_sql_query, "samlet_sql_query.rds")
-
 dbDisconnect(connection)
+
+# Importerer samlet tabel i rds-fil til videre forarbejdning
+samlet_sql_query <- read_rds("data/samlet_sql_query.rds")
 
 samlet_data <- as_tibble(samlet_sql_query) |> 
   mutate(
@@ -76,8 +76,8 @@ samlet_data_flot <- samlet_data |>
 # Tilføj lokalopgør baseret på afstand, og smider det ind i en dataframe. 
 # Afstanden er ca. afrundet afstand taget fra google maps 
 afstande <- data.frame(
-  klub = c("FCM", "SIF", "RFC", "AGF", "AaB", "BIF", "FCK", "FCN", "ACH", "SJF", "VB", "OB", "HOB", "EFB", "LBK", "HIF", "FCV"),
-  afstand_km = c(40, 50, 60, 80, 90, 200, 220, 240, 230, 150, 120, 130, 65, 175, 240, 150, 95)
+  klub = c("FCM", "SIF", "RFC", "AGF", "AaB", "BIF", "FCK", "FCN", "ACH", "SJF", "VB", "OB", "HOB", "EFB", "LBK", "HIF", "FCV", "SDR"),
+  afstand_km = c(40, 50, 60, 80, 90, 200, 220, 240, 230, 150, 120, 130, 65, 175, 240, 150, 95, 150)
 )
 
 samlet_data_afstand <- samlet_data_flot |> 
@@ -104,6 +104,8 @@ samlet_data_flot <- samlet_data_flot |>
   mutate(
   kampstart = parse_time(sprintf("%02d:%02d", hour(kampstart), minute(kampstart)))
   )
+
+write_rds(samlet_data_flot, "data/samlet_data_flot.rds")
 
 # Machine Learning ------------------------------------------------------
 
