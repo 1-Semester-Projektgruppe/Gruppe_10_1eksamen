@@ -3,7 +3,7 @@ pacman::p_load(readxl, httr, jsonlite, tidyverse, rlist, rjstat, rjson, Rcrawler
                repurrrsive, tidymodels, caret, MASS, ISLR2, glmnet, boot, leaps,
                viridis, pls)
 
-samlet_data_flot <- read_rds("data/samlet_data.rds")
+samlet_data_flot <- read_rds("data/samlet_data_flot.rds")
 
 # Udtræk kun de numeriske kolonner
 numeriske_variabler <- samlet_data_flot[, sapply(samlet_data_flot, is.numeric)]  
