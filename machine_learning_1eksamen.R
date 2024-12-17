@@ -1,9 +1,8 @@
 # Machine Learning ------------------------------------------------------
-pacman::p_load(readxl, httr, jsonlite, tidyverse, rlist, rjstat, rjson, Rcrawler, 
-               repurrrsive, tidymodels, caret, MASS, ISLR2, glmnet, boot, leaps,
+pacman::p_load( tidyverse, tidymodels, caret, ISLR2, glmnet, boot, leaps,
                viridis, pls)
 
-samlet_data_flot <- read_rds("data/samlet_data.rds")
+samlet_data_flot <- read_rds("data/samlet_data_flot.rds")
 
 # Udtræk kun de numeriske kolonner
 numeriske_variabler <- samlet_data_flot[, sapply(samlet_data_flot, is.numeric)]  
@@ -19,13 +18,7 @@ corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", tl.col 
 
 pairs(numeriske_variabler)
 
-y <- samlet_data_flot$antal_spild
-x_variabler <- samlet_data_flot[, -1]
 
-cor_y_x <- sapply(x_variabler, function(x) cor(y, x))
-print(cor_y_x)
-
-write_rds(samlet_data_flot, "samlet_data.rds")
 # Ridge og Lasso --------------------------------------------
 
 x <- model.matrix(antal_spild ~ . - 1, samlet_data_flot)
@@ -106,7 +99,6 @@ rmse_0_cv <- sqrt(cv.glm(samlet_data_flot[train, ], glm.fit , K = 10)$delta[1])
 rmse_0_test <- sqrt(mean((samlet_data_flot[test, ]$antal_spild - predict(glm.fit, samlet_data_flot[test, ]))^2))
 
 
-
 # Best subset selection
 
 predict.regsubsets <- function(object, newdata, id, ...) {
@@ -165,12 +157,3 @@ mse_best_subset <- mean((samlet_data_flot[test,]$antal_spild - pred_best_subset)
 rmse_bestsubset_test <- sqrt(mse_best_subset)
 rmse_bestsubset_cv <- sqrt(min(mean.cv.errors))
 
-library(recipes)
-library(modeldata)
-
-corr_rec <- recipe(Sale_Price ~ ., data = ames) |>
-  step_corr(all_numeric_predictors(), threshold = 0.75) |>
-  prep()
-
-corr_rec |>
-  tidy(1)
