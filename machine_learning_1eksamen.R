@@ -1,11 +1,14 @@
 # Machine Learning ------------------------------------------------------
 pacman::p_load( tidyverse, tidymodels, caret, ISLR2, glmnet, boot, leaps,
-               viridis, pls)
+               viridis, pls, car)
 
-samlet_data_flot <- read_rds("data/samlet_data_flot.rds")
+dataset <- read_rds("data/dataset.rds")
+
+x <- model.matrix(antal_afhentede ~ . - 1, dataset)
+y <- dataset$antal_afhentede
 
 # Udtræk kun de numeriske kolonner
-numeriske_variabler <- samlet_data_flot[, sapply(samlet_data_flot, is.numeric)]  
+numeriske_variabler <- dataset[, sapply(dataset, is.numeric)]  
 
 # Opret en korrelationsmatrix
 cor_matrix <- cor(numeriske_variabler)
@@ -18,33 +21,27 @@ corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", tl.col 
 
 pairs(numeriske_variabler)
 
+model <- lm(antal_afhentede ~ . , data = dataset)
+
+vif(model)
+
+summary(model)
+
+cor_matrix <- cor(x)
+cor_long <- as.data.frame(as.table(cor_matrix)) |> 
+  rename(Korrelation = Freq) |> 
+  filter(Var1 != Var2) |> 
+  filter(abs(Korrelation) > 0.75) |> 
+  arrange(desc(Korrelation))
 
 # Ridge og Lasso --------------------------------------------
-
-x <- model.matrix(antal_spild ~ . - 1, samlet_data_flot)
-y <- samlet_data_flot$antal_spild
-
-sum(is.na(samlet_data_flot))
-colSums(is.na(samlet_data_flot))
-
 model <- lm(y ~ x)
-
-# Udtræk R²
-summary(model)$r.squared
-
-length(y)
-length(x)
-
-sum(is.na(y))
-sum(is.na(x_variabler))
-
 grid <- 10^seq(10, -2, length = 100)
 
 set.seed(123)
 train <- sample(1:nrow(x), nrow(x)*2/3)
 test <- (-train)
 y.test <- y[test]
-
 
 # Ridge
 ridge.mod <- glmnet(
@@ -94,66 +91,116 @@ rmse_lasso_test <- sqrt(mean((lasso.pred - y.test)^2))
 
 # 0 features
 set.seed(123)
-glm.fit <- glm(antal_spild ~ 1, data = samlet_data_flot[train, ])
-rmse_0_cv <- sqrt(cv.glm(samlet_data_flot[train, ], glm.fit , K = 10)$delta[1])
-rmse_0_test <- sqrt(mean((samlet_data_flot[test, ]$antal_spild - predict(glm.fit, samlet_data_flot[test, ]))^2))
+glm.fit <- glm(antal_afhentede ~ 1, data = dataset[train, ])
+rmse_0_cv <- sqrt(cv.glm(dataset[train, ], glm.fit , K = 10)$delta[1])
+rmse_0_test <- sqrt(mean((dataset[test, ]$antal_afhentede - predict(glm.fit, dataset[test, ]))^2))
 
 
-# Best subset selection
+# Best subset selection---------------------------------------------------------
+library(leaps)   # Indlæs bibliotek til best subset regression
+library(dplyr)   # Indlæs bibliotek til nem datamanipulation
 
+# Definer predict-funktion for regsubsets
 predict.regsubsets <- function(object, newdata, id, ...) {
-  form <- as.formula(object$call[[2]])
-  mat <- model.matrix(form, newdata)
-  coefi <- coef(object, id = id)
-  xvars <- names(coefi)
-  mat[, xvars] %*% coefi
+  form  <- as.formula(object$call[[2]])                # Ekstraher modelens formel
+  mat   <- model.matrix(form, newdata)                # Opret designmatrix til nye data
+  coefi <- coef(object, id = id)                      # Hent koefficienter for modelstørrelsen
+  xvars <- intersect(names(coefi), colnames(mat))     # Match variabler mellem model og data
+  if (length(xvars) == 0) stop("Ingen matchende variabler i data!") # Stop, hvis ingen match
+  mat[, xvars, drop = FALSE] %*% coefi                # Beregn forudsigelser
 }
 
-samlet_train <- samlet_data_flot[train,]
-samlet_test <- samlet_data_flot[test,]
+# Konverter kategoriske variabler til faktorer
+dataset <- dataset %>%
+  mutate(across(where(is.character), as.factor))      # Konverter alle character-kolonner til faktorer
 
-k <- 10 # Vi danner 10 folds
-n <- nrow(samlet_train) # registrerer hvor mange observationer, vi har.
-set.seed(1) 
-folds <- sample(rep(1:k, length = n)) #Vi tildeler en værdi mellem 1 og
-dim(samlet_train)[2]  # Der er 14 variabler og dermed 13 prædiktorer
+# Split data i trænings- og testdatasæt
+set.seed(123)                                         # Sæt seed for reproducerbarhed
+train <- sample(seq_len(nrow(dataset)), size = 0.7 * nrow(dataset)) # Vælg 70% til træning
+test  <- setdiff(seq_len(nrow(dataset)), train)       # Resterende 30% til test
+samlet_train <- dataset[train, ]                     # Træningsdatasæt
+samlet_test  <- dataset[test, ]                      # Testdatasæt
 
-cv.errors <- matrix(NA, k, 19,
-                    dimnames = list(NULL, paste(1:19)))
-cv.errors
+# Harmoniser faktorniveauer mellem trænings- og testdata
+categorical_vars <- names(Filter(is.factor, dataset)) # Identificer faktorkolonner
+for (col in categorical_vars) {
+  samlet_test[[col]] <- factor(samlet_test[[col]], levels = levels(samlet_train[[col]])) # Ensret faktorniveauer
+}
 
+# Opsætning til K-fold Cross-Validation
+k <- 10                                              # Antal fold til K-fold cross-validation
+n <- nrow(samlet_train)                              # Antal observationer i træningsdata
+set.seed(1)                                          # Sæt seed for reproducerbarhed
+folds <- sample(rep(1:k, length = n))                # Opret fold
 
-for (j in 1:k) { # her gennemløbes alle folds
-  best.fit <- regsubsets(antal_spild ~ .,
-                         data = samlet_train[folds != j, ],
-                         nvmax = 13)
-  for (i in 1:19) { # her gennemløbes alle kandidatmodeller
-    pred <- predict(best.fit, samlet_train[folds == j, ], id = i)
-    # predict-funktionen ovenfor kalder den funktion, vi har lavet tidligere. 
-    cv.errors[j, i] <-
-      mean((samlet_train$antal_spild[folds == j] - pred)^2) # Her udregnes MSE for hver 
-    # fold for hver kandidatmodel 
+# Initialiser matrix til at gemme cross-validation fejl
+cv.errors <- matrix(NA, k, 14, dimnames = list(NULL, paste(1:14))) # Gem fejl for hver fold og modelstørrelse
+
+# Udfør K-fold Cross-Validation
+for (j in 1:k) {                                     # Loop gennem fold
+  best.fit <- regsubsets(antal_afhentede ~ ., data = samlet_train[folds != j, ], nvmax = 14) # Træn model
+  for (i in 1:14) {                                  # Loop gennem kandidatmodelstørrelser
+    pred <- tryCatch({
+      predict.regsubsets(best.fit, samlet_train[folds == j, ], id = i) # Forudsig
+    }, error = function(e) {
+      return(rep(NA, sum(folds == j)))             # Returner NA ved fejl
+    })
+    cv.errors[j, i] <- mean((samlet_train$antal_afhentede[folds == j] - pred)^2, na.rm = TRUE) # Beregn MSE
   }
 }
 
-mean.cv.errors <- apply(cv.errors, 2, mean) # apply er en smart funktion, der 
-# gennemløber alle rækker og tager gennemsnittet henover hver søjle, som svarer 
-# til hver kandidatmodel.
-mean.cv.errors # Vi får altså en gennemsnitlig MSE for hver kandidatmodel.
-par(mfrow = c(1, 1))
-plot(mean.cv.errors, type = "b") # Her plottes disse gennemsnit for hver størrelse,
-which.min(mean.cv.errors)
+# Beregn gennemsnitlig cross-validation fejl for hver modelstørrelse
+mean.cv.errors <- apply(cv.errors, 2, function(x) mean(x, na.rm = TRUE))
+
+# Ignorer fejlende modeller (f.eks. model 14) ved beregning af minimum
+valid_models <- which(is.finite(mean.cv.errors))    # Find gyldige modeller
+mean.cv.errors <- mean.cv.errors[valid_models]      # Behold kun gyldige modeller
+optimal_model_size <- valid_models[which.min(mean.cv.errors)] # Find optimal model
+
+# Plot gennemsnitlige cross-validation fejl
+par(mfrow = c(1, 1))                                # Konfigurer plottets layout
+plot(mean.cv.errors, type = "b", xlab = "Antal prædiktorer", ylab = "Gns. CV Fejl",
+     main = "K-fold Cross-Validation Fejl pr. Modelstørrelse") # Plot fejl pr. modelstørrelse
+cat("Optimal modelstørrelse:", optimal_model_size, "\n") # Print resultat
+
+# Træn den bedste model på alle træningsdata
+reg.best <- regsubsets(antal_afhentede ~ ., data = samlet_train, nvmax = 14)
+best_model_coefficients <- coef(reg.best, optimal_model_size) # Hent koefficienter
+print(best_model_coefficients)                                # Print koefficienter
+
+# Forudsig på testdata
+pred_best_subset <- predict.regsubsets(reg.best, samlet_test, id = optimal_model_size)
+
+# Beregn MSE og RMSE på testdata
+mse_best_subset <- mean((samlet_test$antal_afhentede - pred_best_subset)^2) # Bestsubset MSE på testdata: 30583.84
+rmse_best_subset <- sqrt(mse_best_subset)                                   # Bestsubset RMSE på testdata: 174.8824
+
+# Beregn RMSE fra K-fold Cross-Validation
+rmse_bestsubset_cv <- sqrt(min(mean.cv.errors))                  # Bestsubset CV RMSE: 154.7378
 
 
-# Her fittes modellen til ALLE træningsdata
-reg.best <- regsubsets(antal_spild ~ ., data = samlet_train,
-                       nvmax = 13)
-coef(reg.best, 7)
-
-pred_best_subset <- predict(reg.best, samlet_test, id = 7)
 
 
-mse_best_subset <- mean((samlet_data_flot[test,]$antal_spild - pred_best_subset)^2)
-rmse_bestsubset_test <- sqrt(mse_best_subset)
-rmse_bestsubset_cv <- sqrt(min(mean.cv.errors))
+# Sammenligning: 3 og 13 prædiktorer--------------------------------------------
 
+optimal_model_size <- 3
+
+# For model 3
+pred_model_3 <- predict.regsubsets(reg.best, samlet_test, id = 3)
+mse_model_3 <- mean((samlet_test$antal_afhentede - pred_model_3)^2)
+rmse_model_3 <- sqrt(mse_model_3) # Bestsubset RMSE med 3 prædiktorer på testdata: 138.2644
+
+# For model 13
+pred_model_13 <- predict.regsubsets(reg.best, samlet_test, id = 13)
+mse_model_13 <- mean((samlet_test$antal_afhentede - pred_model_13)^2)
+rmse_model_13 <- sqrt(mse_model_13) # Bestsubset RMSE med 13 prædiktorer på testdata: 174.8824
+
+mean.cv.errors
+cv_rmse_model_3 <- sqrt(mean.cv.errors[3]) #Bestsubset CV RMSE med 3 præditorer: 154.7378
+
+
+# Hent koefficienterne for modelstørrelse 3
+model_3_coefficients <- coef(reg.best, id = 1)
+
+# Udskriv koefficienterne
+print(model_3_coefficients)
