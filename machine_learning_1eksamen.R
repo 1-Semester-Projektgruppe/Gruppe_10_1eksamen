@@ -1,32 +1,43 @@
-# Machine Learning ------------------------------------------------------
+# Machine Learning -------------------------------------------------------------
 pacman::p_load( tidyverse, tidymodels, caret, ISLR2, glmnet, boot, leaps,
-               viridis, pls, car)
+               viridis, pls, car, corrplot)
 
+
+#------------------------------------------------------------------------------#
+# OBS! Kør koden fra toppen af for at få de samme resultater, 
+# da der kan forekomme forskellige resultater, når koden køres i små bidder.
+#------------------------------------------------------------------------------#
+
+
+# Indlæs dataset fra en RDS-fil
 dataset <- read_rds("data/dataset.rds")
 
+# Opret designmatrix og responsvektor
 x <- model.matrix(antal_afhentede ~ . - 1, dataset)
 y <- dataset$antal_afhentede
 
 # Udtræk kun de numeriske kolonner
 numeriske_variabler <- dataset[, sapply(dataset, is.numeric)]  
 
-# Opret en korrelationsmatrix
+# Opret en korrelationsmatrix for de numeriske variabler
 cor_matrix <- cor(numeriske_variabler)
 
+# Erstat eventuelle NA-værdier i korrelationsmatrixen med 0
 cor_matrix[is.na(cor_matrix)] <- 0
 
-library(corrplot)
-# Opret et varmekortgraf
-corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", tl.col = "black", tl.srt = 100)
+# Visualiser korrelationsmatrix
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 100)
 
-pairs(numeriske_variabler)
+# Opret lineær model
+model <- lm(antal_afhentede ~ ., data = dataset)
 
-model <- lm(antal_afhentede ~ . , data = dataset)
-
+# Beregn GVIF for modellen
 vif(model)
 
 summary(model)
 
+# Filtrer stærke korrelationer
 cor_matrix <- cor(x)
 cor_long <- as.data.frame(as.table(cor_matrix)) |> 
   rename(Korrelation = Freq) |> 
@@ -34,66 +45,76 @@ cor_long <- as.data.frame(as.table(cor_matrix)) |>
   filter(abs(Korrelation) > 0.75) |> 
   arrange(desc(Korrelation))
 
-# Ridge og Lasso --------------------------------------------
-model <- lm(y ~ x)
-grid <- 10^seq(10, -2, length = 100)
+# Ridge og Lasso ---------------------------------------------------------------
 
-set.seed(123)
-train <- sample(1:nrow(x), nrow(x)*2/3)
-test <- (-train)
-y.test <- y[test]
+model <- lm(y ~ x)                     # Opret lineær model
+grid <- 10^seq(10, -2, length = 100)   # Skala for tuningparametre
 
-# Ridge
-ridge.mod <- glmnet(
+set.seed(123)                          # Sæt seed for reproducerbarhed
+train <- sample(1:nrow(x), nrow(x)*2/3) # Vælg 2/3 af rækkerne som træningsdata
+test <- (-train)                       # Resten bruges som testdata
+y.test <- y[test]                      # Responsvariabel for testdata
+
+# Ridge ------------------------------------------------------------------------
+
+ridge.mod <- glmnet(                   # Træn Ridge-model
   x[train, ], 
   y[train], 
-  alpha = 0,
-  lambda = grid,
+  alpha = 0,                           # alpha = 0 for Ridge
+  lambda = grid, 
   thresh = 1e-12
 )
-set.seed(123)
-cv.out <- cv.glmnet(
+
+set.seed(123)                          # Sæt seed for CV
+cv.out <- cv.glmnet(                   # Krydsvalidering for Ridge
   x[train, ], 
   y[train], 
-  alpha = 0,
-  lambda = grid,
-  nfolds = 5                    )
+  alpha = 0,                           # alpha = 0 for Ridge
+  lambda = grid, 
+  nfolds = 5
+)
 
-bestlam <- cv.out$lambda.min
-rmse_ridge_cv <- sqrt(cv.out$cvm[cv.out$lambda == bestlam])
+bestlam <- cv.out$lambda.min           # Vælg bedste lambda
+rmse_ridge_cv <- sqrt(cv.out$cvm[cv.out$lambda == bestlam]) # Ridge RMSE CV: 143.9899
 
-ridge.pred <- predict(ridge.mod, s = bestlam, newx = x[test, ]) 
-rmse_ridge_test <- sqrt(mean((ridge.pred - y.test)^2))
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = x[test, ]) # Forudsig med Ridge
+rmse_ridge_test <- sqrt(mean((ridge.pred - y.test)^2))          # Ridge RMSE Test: 150.1857
 
+# Lasso ------------------------------------------------------------------------
 
-# Lasso
-lasso.mod <- glmnet(
+lasso.mod <- glmnet(                   # Træn Lasso-model
   x[train, ], 
   y[train], 
-  alpha = 1,
-  lambda = grid,
+  alpha = 1,                           # alpha = 1 for Lasso
+  lambda = grid, 
   thresh = 1e-12
 )
-set.seed(123)
-cv.out <- cv.glmnet(
+
+set.seed(123)                          # Sæt seed for CV
+cv.out <- cv.glmnet(                   # Krydsvalidering for Lasso
   x[train, ], 
   y[train], 
-  alpha = 1,
-  lambda = grid,
-  nfolds = 5                    )
+  alpha = 1,                           # alpha = 1 for Lasso
+  lambda = grid, 
+  nfolds = 5
+)
 
-bestlam <- cv.out$lambda.min
-rmse_lasso_cv <- sqrt(cv.out$cvm[cv.out$lambda == bestlam])
+bestlam <- cv.out$lambda.min           # Vælg bedste lambda
+rmse_lasso_cv <- sqrt(cv.out$cvm[cv.out$lambda == bestlam]) # Lasso RMSE CV: 157.6606
 
-lasso.pred <- predict(lasso.mod, s = bestlam, newx = x[test, ]) 
-rmse_lasso_test <- sqrt(mean((lasso.pred - y.test)^2))
+lasso.pred <- predict(lasso.mod, s = bestlam, newx = x[test, ]) # Forudsig med Lasso
+rmse_lasso_test <- sqrt(mean((lasso.pred - y.test)^2))          # Lasso RMSE Test: 175.3711
 
 
+# Naiv model--------------------------------------------------------------------
 # 0 features
 set.seed(123)
-glm.fit <- glm(antal_afhentede ~ 1, data = dataset[train, ])
-rmse_0_cv <- sqrt(cv.glm(dataset[train, ], glm.fit , K = 10)$delta[1])
-rmse_0_test <- sqrt(mean((dataset[test, ]$antal_afhentede - predict(glm.fit, dataset[test, ]))^2))
+glm.fit <- glm(antal_afhentede ~ 1, data = dataset[train, ]) # Træn naiv model (kun intercept)
+
+rmse_0_cv <- sqrt(cv.glm(dataset[train, ], glm.fit , K = 10)$delta[1]) # Naiv RMSE CV: 196.9186   
+
+rmse_0_test <- sqrt(mean((dataset[test, ]$antal_afhentede - 
+                            predict(glm.fit, dataset[test, ]))^2))       # Naiv RMSE Test: 175.2879
 
 
 # Best subset selection---------------------------------------------------------
@@ -157,11 +178,12 @@ valid_models <- which(is.finite(mean.cv.errors))    # Find gyldige modeller
 mean.cv.errors <- mean.cv.errors[valid_models]      # Behold kun gyldige modeller
 optimal_model_size <- valid_models[which.min(mean.cv.errors)] # Find optimal model
 
-# Plot gennemsnitlige cross-validation fejl
-par(mfrow = c(1, 1))                                # Konfigurer plottets layout
-plot(mean.cv.errors, type = "b", xlab = "Antal prædiktorer", ylab = "Gns. CV Fejl",
-     main = "K-fold Cross-Validation Fejl pr. Modelstørrelse") # Plot fejl pr. modelstørrelse
-cat("Optimal modelstørrelse:", optimal_model_size, "\n") # Print resultat
+# Plot gennemsnitlige cross-validation fejl med alle værdier på x-aksen
+plot(mean.cv.errors, type = "b", pch = 16, col = "darkred", 
+     xlab = "Antal prædiktorer", ylab = "Gennemsnitlig CV MSE", 
+     main = "Modelstørrelse vs. Gennemsnitlig CV MSE", xaxt = "n")
+axis(1, at = 1:length(mean.cv.errors), labels = 1:length(mean.cv.errors))  # Tilføj alle x-værdier
+grid()  # Tilføj gitterlinjer
 
 # Træn den bedste model på alle træningsdata
 reg.best <- regsubsets(antal_afhentede ~ ., data = samlet_train, nvmax = 14)
@@ -172,31 +194,28 @@ print(best_model_coefficients)                                # Print koefficien
 pred_best_subset <- predict.regsubsets(reg.best, samlet_test, id = optimal_model_size)
 
 # Beregn MSE og RMSE på testdata
-mse_best_subset <- mean((samlet_test$antal_afhentede - pred_best_subset)^2) # Bestsubset MSE på testdata: 30583.84
-rmse_best_subset <- sqrt(mse_best_subset)                                   # Bestsubset RMSE på testdata: 174.8824
+mse_best_subset <- mean((samlet_test$antal_afhentede - pred_best_subset)^2) 
+rmse_best_subset <- sqrt(mse_best_subset)                        # Bestsubset RMSE Test: 174.8824
 
 # Beregn RMSE fra K-fold Cross-Validation
-rmse_bestsubset_cv <- sqrt(min(mean.cv.errors))                  # Bestsubset CV RMSE: 154.7378
-
-
+rmse_bestsubset_cv <- sqrt(min(mean.cv.errors))                  # Bestsubset RMSE CV: 154.7378
 
 
 # Sammenligning: 3 og 13 prædiktorer--------------------------------------------
 
-optimal_model_size <- 3
-
-# For model 3
-pred_model_3 <- predict.regsubsets(reg.best, samlet_test, id = 3)
-mse_model_3 <- mean((samlet_test$antal_afhentede - pred_model_3)^2)
-rmse_model_3 <- sqrt(mse_model_3) # Bestsubset RMSE med 3 prædiktorer på testdata: 138.2644
 
 # For model 13
 pred_model_13 <- predict.regsubsets(reg.best, samlet_test, id = 13)
 mse_model_13 <- mean((samlet_test$antal_afhentede - pred_model_13)^2)
 rmse_model_13 <- sqrt(mse_model_13) # Bestsubset RMSE med 13 prædiktorer på testdata: 174.8824
 
+# For model 3
+pred_model_3 <- predict.regsubsets(reg.best, samlet_test, id = 3)
+mse_model_3 <- mean((samlet_test$antal_afhentede - pred_model_3)^2)
+rmse_model_3 <- sqrt(mse_model_3) # Bestsubset RMSE med 3 prædiktorer på testdata: 138.2644
+
 mean.cv.errors
-cv_rmse_model_3 <- sqrt(mean.cv.errors[3]) #Bestsubset CV RMSE med 3 præditorer: 154.7378
+cv_rmse_model_3 <- sqrt(mean.cv.errors[3]) #Bestsubset RMSE med 3 prædiktorer på CV: 156.9426 
 
 
 # Hent koefficienterne for modelstørrelse 3
@@ -204,3 +223,27 @@ model_3_coefficients <- coef(reg.best, id = 1)
 
 # Udskriv koefficienterne
 print(model_3_coefficients)
+
+
+# Sammenligning: 3 og 13 prædiktorer--------------------------------------------
+
+# Model med 13 prædiktorer
+pred_model_13 <- predict.regsubsets(reg.best, samlet_test, id = 13)
+mse_model_13 <- mean((samlet_test$antal_afhentede - pred_model_13)^2) 
+rmse_model_13 <- sqrt(mse_model_13) # RMSE for model med 13 prædiktorer: 174.8824
+
+
+# Model med 3 prædiktorer
+pred_model_3 <- predict.regsubsets(reg.best, samlet_test, id = 3)
+mse_model_3 <- mean((samlet_test$antal_afhentede - pred_model_3)^2)    
+rmse_model_3 <- sqrt(mse_model_3) # RMSE for model med 3 prædiktorer: 138.2644                                     
+
+# Gennemsnitlig CV RMSE for model med 3 prædiktorer
+cv_rmse_model_3 <- sqrt(mean.cv.errors[3]) # CV RMSE for model med 3 prædiktorer: 156.9426                            
+
+# Hent koefficienterne for model med 3 prædiktorer
+model_3_coefficients <- coef(reg.best, id = 3)
+
+# Udskriv koefficienterne
+print(model_3_coefficients)
+
