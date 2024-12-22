@@ -221,4 +221,3 @@ model_3_coefficients <- coef(reg.best, id = 3)
 
 # Udskriv koefficienterne
 print(model_3_coefficients)
-
