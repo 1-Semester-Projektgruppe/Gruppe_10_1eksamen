@@ -195,10 +195,10 @@ pred_best_subset <- predict.regsubsets(reg.best, samlet_test, id = optimal_model
 
 # Beregn MSE og RMSE på testdata
 mse_best_subset <- mean((samlet_test$antal_afhentede - pred_best_subset)^2) 
-rmse_best_subset <- sqrt(mse_best_subset)                        # Bestsubset RMSE Test: 174.8824
+rmse_best_subset <- sqrt(mse_best_subset)                    # Bestsubset RMSE Test: 174.8824
 
 # Beregn RMSE fra K-fold Cross-Validation
-rmse_bestsubset_cv <- sqrt(min(mean.cv.errors))                  # Bestsubset RMSE CV: 154.7378
+rmse_bestsubset_cv <- sqrt(min(mean.cv.errors))              # Bestsubset RMSE CV: 154.7378
 
 
 # Sammenligning: 3 og 13 prædiktorer--------------------------------------------
