@@ -195,34 +195,10 @@ pred_best_subset <- predict.regsubsets(reg.best, samlet_test, id = optimal_model
 
 # Beregn MSE og RMSE på testdata
 mse_best_subset <- mean((samlet_test$antal_afhentede - pred_best_subset)^2) 
-rmse_best_subset <- sqrt(mse_best_subset)                        # Bestsubset RMSE Test: 174.8824
+rmse_best_subset <- sqrt(mse_best_subset)                    # Bestsubset RMSE Test: 174.8824
 
 # Beregn RMSE fra K-fold Cross-Validation
-rmse_bestsubset_cv <- sqrt(min(mean.cv.errors))                  # Bestsubset RMSE CV: 154.7378
-
-
-# Sammenligning: 3 og 13 prædiktorer--------------------------------------------
-
-
-# For model 13
-pred_model_13 <- predict.regsubsets(reg.best, samlet_test, id = 13)
-mse_model_13 <- mean((samlet_test$antal_afhentede - pred_model_13)^2)
-rmse_model_13 <- sqrt(mse_model_13) # Bestsubset RMSE med 13 prædiktorer på testdata: 174.8824
-
-# For model 3
-pred_model_3 <- predict.regsubsets(reg.best, samlet_test, id = 3)
-mse_model_3 <- mean((samlet_test$antal_afhentede - pred_model_3)^2)
-rmse_model_3 <- sqrt(mse_model_3) # Bestsubset RMSE med 3 prædiktorer på testdata: 138.2644
-
-mean.cv.errors
-cv_rmse_model_3 <- sqrt(mean.cv.errors[3]) #Bestsubset RMSE med 3 prædiktorer på CV: 156.9426 
-
-
-# Hent koefficienterne for modelstørrelse 3
-model_3_coefficients <- coef(reg.best, id = 1)
-
-# Udskriv koefficienterne
-print(model_3_coefficients)
+rmse_bestsubset_cv <- sqrt(min(mean.cv.errors))              # Bestsubset RMSE CV: 154.7378
 
 
 # Sammenligning: 3 og 13 prædiktorer--------------------------------------------
@@ -231,7 +207,6 @@ print(model_3_coefficients)
 pred_model_13 <- predict.regsubsets(reg.best, samlet_test, id = 13)
 mse_model_13 <- mean((samlet_test$antal_afhentede - pred_model_13)^2) 
 rmse_model_13 <- sqrt(mse_model_13) # RMSE for model med 13 prædiktorer: 174.8824
-
 
 # Model med 3 prædiktorer
 pred_model_3 <- predict.regsubsets(reg.best, samlet_test, id = 3)
