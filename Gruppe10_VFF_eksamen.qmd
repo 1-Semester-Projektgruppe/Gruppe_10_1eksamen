@@ -1,0 +1,888 @@
+---
+title: "Vintereksamen - Dataanalyse"
+subtitle: "Januar 2025"
+date: last-modified
+author:
+- Jing Wei
+- Marie Rahbæk Pedersen
+- Peter Quan Manh Thuong Pham
+- Marcus Vogt Nielsen
+format: 
+  docx:
+    toc: true
+    toc-title: Indholdsfortegnelse
+---
+
+```{r}
+#| label: VFF-data
+#| include: false # Fjerner koden
+#| results: false # Fjerner resultater
+#| warning: false # Fjerner advarsler
+
+pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl)
+
+# Importerer udleveret datasæt
+guld_raw <- read_excel("data/Guld.xlsx")
+
+guld_clean <- guld_raw |>
+  rename( # Ændrer navnene på kolonnerne til mere relevante navne
+    antal_afhentede = Guld_menu_stk,
+    antal_bestilte = Antal_bestilte,
+    ude = Kamp,
+    dato = Dato,
+    max_antal = Antal_max) |> 
+  filter(
+    !is.na(antal_afhentede) & # Fjerner alle rækker med NA i antal afhentede
+      !is.na(antal_bestilte) # Fjerner alle rækker med NA i antal_bestilte
+  ) |> 
+  select(!Gule_poletter_stk) |>  # Eksluderer Gule_poletter_stk kolonnen, da den ikke er relevant.
+  mutate(
+    antal_spild = antal_bestilte - antal_afhentede, # laver ny kolonne med antallet af guld_menuer spildt til hver kamp
+    afhentningsgrad = round((antal_afhentede / antal_bestilte * 100), 1), # kolonne med procentdel af bestilte der blev afhentet
+    afhentede_max = round((antal_afhentede / max_antal * 100), 1), # kolonne med procentdel af max_antal der blev afhentet
+    bestilte_max = round((antal_bestilte / max_antal * 100), 1), # kolonne med procentdel af max der blev bestilt
+    spildegrad = round((antal_spild / antal_bestilte * 100), 1), # kolonne med procentdel af hvor mange bestilte der blev spildt
+    dato = if_else(
+      str_detect(dato, "^\\d+$"), # Tjekker om dato-kolonne, har tal fra start til slut, da dette karakteriserer excel-tal datoer.
+      format(convert_to_date(as.numeric(dato)), # Hvis tal hele vejen, så ændres excel-tallet til dato
+             "%d.%m.%Y"),
+      format(dmy(dato), "%d.%m.%Y")) # Hvis der er andet end tal f.eks. "-", som der er i de korrekt skrevede datoer, så ændres det bare til dato-format
+  ) |> 
+  separate(dato, into = c("dag", "måned", "år")) |> # laver nye kolonner af dato-kolonnen (dag, måned og år)
+  mutate(
+    dato = make_date(år, måned, dag), # formaterer til samme dato-format som dmi og superstats til senere brug
+    ugedag = weekdays.Date(dato) # laver en kolonne med ugedage baseret på dato-kolonnen
+  ) |> 
+  relocate( # sætter følgende kolonner forrest i den samlede tabel.
+    dato, år, måned, dag, ugedag
+  )
+
+vff <- guld_clean |> 
+  group_by(ude) |> # grupperer efter hvilket udehold det er
+  mutate(
+    mean_afhentede = round(mean(antal_afhentede), 1), # gennemsnitligt antal afhentede pr. hold
+    mean_bestilte = round(mean(antal_bestilte), 1), # gennemsnitligt antal bestilte pr. hold
+    mean_afhentningsgrad = round(mean(afhentningsgrad), 1), # gennemsnitlig afhentningsgrad pr. hold
+    mean_spild = round(mean(antal_spild)), # gennemsnitligt spild pr. hold
+    sidste_afhentede = antal_afhentede[which.max(dato)], # antallet af afhentede ved sidste kamp mod hold
+    sidste_bestilte = antal_bestilte[which.max(dato)], # antallet af bestilte ved sidste kamp mod hold
+    sidste_afhentningsgrad = afhentningsgrad[which.max(dato)], # afhentningsgraden ved sidste kamp mod hold
+    sidste_spild = antal_spild[which.max(dato)], # antallet af spildte ved sidste kamp mod hold
+  ) |> 
+  ungroup() |> # fjerner gruppering
+  mutate( # Laver kolonnen "årstid", ud fra kolonnen "måned"
+    årstid = case_when(
+      måned %in% c("12", "01", "02") ~ "Vinter", # December, Januar, Februar er "Vinter"
+      måned %in% c("03", "04", "05") ~ "Forår", # Osv...
+      måned %in% c("06", "07", "08") ~ "Sommer",
+      måned %in% c("09", "10", "11") ~ "Efterår"
+  )) |> 
+  relocate(årstid, .after = år)
+
+# Laver RDS-fil med vff-datasæt
+write_rds(vff, "data/vff.rds")
+```
+
+```{r}
+#| label: Superstats Webscraping
+#| include: false 
+#| results: false
+#| warning: false
+
+pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl, tibble, dslabs, jsonlite, rjson)
+
+# Webscraping: Superstats.dk
+
+# Definerer basen af url'et til scraping
+base_url <- "https://superstats.dk/program?season="
+
+# Laver en tom tibble til at kunne indsætte indhentet data
+superstats_combined <- tibble()
+
+# Her er webscraping kode til at få tilskuer-data med fra alle sæsoner med guldmenu-data og den nyeste sæson også:
+
+# Definerer hvilke sæsoner der skal indsamles data fra
+sæson <- c(2014, 2016, 2017, 2022, 2023, 2024, 2025)
+
+# Definerer hvor mange runder der er hvert år, for kun at medtage det antal tabeller med fra Superstats
+antal_runder <- c(33, 33, 36, 32, 32, 32, 17)
+
+# For-loop der kører 7 gange, da der skal indhentes data fra 7 sæsoner
+for (i in 1:7) {
+  url <- paste0(base_url, sæson[i]) # sammensætter base-url og sæson-årstal for "i"
+  html <- read_html(url) 
+  table <- html |> 
+    html_elements("table") |> 
+    html_table(convert = FALSE) # convert = FALSE, for at undgå tilskuere automatisk håndteres som double og derfor sletter 0 til sidst i tal senere
+
+# Sammensætter tabeller og da der bliver medtaget flere tabeller end nødvendigt, så er der tilføjet "antal_runder[i]" så der kun bliver medtaget de tabeller med runde-data.
+  bind_table <- bind_rows(table[1:antal_runder[i]]) 
+  
+  bind_clean <- bind_table |> 
+    separate(...3, into = c("hjemme", "ude")) |> # Deler kolonnen "...3" op i hjemme- og udehold
+    filter(hjemme == "VFF") |> # Filtrerer så det kun er rækker hvor VFF er hjemmehold der medtages
+    pivot_longer( # Da der er rundenumre der står som kolonnenavne, flyttes disse til kolonnen "runde"
+      cols = ends_with("...2"),
+      names_to = "runde",
+      values_to = "dato",
+      values_drop_na = TRUE
+    ) |> 
+    separate(dato, into = c("dag", "måned","kampstart"), sep = "/| ") |> # Opdeler dato i dag, måned og kampstart, der opdeles efter enten "/" eller " " (mellemrum)
+    mutate(
+      tilskuere = as.numeric(gsub("\\.", "", ...5)), #gsub fjerner "." og skifter det ud med "", altså ingenting.
+      runde = parse_number(runde), # Fjerner bogstaverne og medtager kun tallet i runde-kolonnen
+      år = if_else(måned %in% c("02", "03", "04", "05"), sæson[i], # Hvis måneden er fra februar til maj, så er det slutningen af sæsonen og derfor det højeste årstål i sæsonen.
+                   sæson[i] - 1), # Hvis det ikke er fra feb.-maj, så er det før nytår og dermed det tidligere årstal.
+      dato = make_date(år, måned, dag) # laver en kolonne med dato i dato-format
+    ) |> 
+    select(dato, år, måned, dag, kampstart, runde, hjemme, ude, tilskuere) # Udvælger alle relevante kolonner
+  superstats_combined <- bind_rows(superstats_combined, bind_clean) # Sætter data ind i den tibble hvor alt scraped data samles
+} # Og der startes et nyt loop
+
+superstats_flot <- superstats_combined |> 
+  group_by(ude) |> # Grupperer efter hvilket udehold det er
+  mutate(
+    mean_tilskuere = round(mean(tilskuere), 0), # Udregner gennemsnit af tilskuere pr. hold
+    sidste_tilskuer_antal = tilskuere[which.max(dato)] # Tager det sidste antal tilskuere der var til en kamp for hvert hold
+  ) |> 
+  ungroup()
+
+# Laver rds-fil med alt data fra superstats
+write_rds(superstats_flot, "data/superstats.rds")
+```
+
+```{r}
+#| label: DMI API
+#| include: false
+#| results: false
+#| warning: false
+
+pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl, tibble, dslabs, jsonlite, rjson)
+
+# API: DMI
+# Laver tom tibble til at indsætte dmi-data
+samlet_dmi_flot <- tibble()
+
+# Lave liste over datoer der skal hentes data fra.
+vff <- read_rds("data/vff.rds")
+alle_datoer <- as.character(vff$dato) # as.character() fordi ellers så bruger den mærkelige tal som dato
+
+# Definere dele af request-url, der ikke ændres.
+base_url <- "https://dmigw.govcloud.dk/v2/" # Definerer basen af url
+info_url <- "metObs/collections/observation/items?" # Definerer yderligere hvor dataen skal hentes fra
+station <- "stationId=06060" # Definerer hvilken station der skal hentes data fra
+limit <- "&limit=300000" # Definerer hvad grænsen for antallet af rækker data der kan hentes pr. request
+api_key <- "&api-key=8119aa28-31a1-4cec-9ab7-549fb14e0090" # Definerer API-nøgle
+
+for (dato_x in alle_datoer) { # Laver et loop der starter med den første dato i "alle_datoer" og kører igennem hele listen
+  
+  # Definere hvilken dato der skal hentes data fra.
+  start_dato <- paste0("&datetime=", dato_x, "T00:00:00Z")
+  slut_dato <- paste0("/", dato_x, "T23:59:59Z")
+  
+  # Samler fulde URL
+  full_url <- paste0(base_url, info_url, station, start_dato, slut_dato, limit, api_key)
+  
+  # Laver en get-efterspørgsel til API
+  api_call <- httr::GET(full_url)
+  
+  # Tjekker statuskode og omdanner fra JSON til tibble
+  if (api_call$status_code == 200) {
+    api_char <- base::rawToChar(api_call$content)
+    api_JSON <- jsonlite::fromJSON(api_char, flatten = TRUE)
+    dmi_dato_tibble <- as_tibble(api_JSON$features)
+    
+    # Rydder op i data
+    dmi_flot <- dmi_dato_tibble |> 
+      mutate(
+        dato = parse_date(substr(properties.observed, 1, 10)), # Udleder dato fra karakterene fra 1-10 i properties.observed
+        tid = parse_time(substr(properties.observed, 12, 19)) # Udleder tidspunkt fra karakterene 12-19 i properties.observed
+      ) |> 
+      select(
+        dato, tid, properties.parameterId, properties.value # Udvælger relevante kolonner
+      ) |> 
+      pivot_wider( # Da parametrene står som rækkeværdier, så omdannes de her til kolonneværdier
+        names_from = properties.parameterId,
+        values_from = properties.value
+      )
+    samlet_dmi_flot <- bind_rows(samlet_dmi_flot, dmi_flot) # Forbinder data fra enkelte datoer til samlet datasæt
+  } else {  # Printer besked om hvis bestemte datoer ikke havde status-kode 200, og derfor ikke kunne hentes.
+    warning(paste("Fejl ved", dato_x))
+  }
+}
+
+dmi <- samlet_dmi_flot |> 
+  mutate(
+    tid = as.character(tid) # Omdanner tidskolonne til character, da det ellers ændres fra rds til sql
+  )
+
+# Laver rds-fil for at gemme det endelige dmi-datasæt
+write_rds(dmi, "data/dmi.rds")
+```
+
+```{r}
+#| label: SQL
+#| include: false
+#| results: false
+#| warning: false
+
+pacman::p_load(DBI, RSQLite, readr)
+
+# Henter rds-filer fra vff, dmi og superstats
+vff <- readRDS("data/vff.rds")
+dmi <- readRDS("data/dmi.rds")
+superstats <- readRDS("data/superstats.rds")
+
+# Skaber forbindelse til en databasen "vff.db", eller opretter database med samme navn hvis den ikke findes.
+connection <- dbConnect(SQLite(), "vff.db") 
+
+# Importerer tabeller fra vff, superstats og dmi
+dbWriteTable(connection, "vff", vff)
+dbWriteTable(connection, "superstats", superstats)
+dbWriteTable(connection, "dmi", dmi)
+
+# Viser oversigt over hvilke tabeller der er i databasen (dmi, superstats, vff)
+dbListTables(connection)
+
+# Henter alle kolonner der skal bruges og joiner på dato-kolonnen af de forskellige datasæt
+samlet_sql_query <- dbGetQuery(connection,
+           "select vff.dato, vff.år, vff.måned, vff.dag, vff.årstid, vff.ugedag, vff.ude, vff.antal_afhentede, vff.mean_afhentede, vff.sidste_afhentede,
+           superstats.kampstart, superstats.runde, superstats.mean_tilskuere, superstats.sidste_tilskuer_antal,
+           dmi.tid, dmi.temp_mean_past1h, dmi.precip_dur_past1h, dmi.precip_past1h, dmi.wind_speed_past1h
+           from vff
+           left join superstats ON vff.dato = superstats.dato
+           left join dmi ON vff.dato = dmi.dato
+           where dmi.temp_mean_past1h is not NULL") 
+# Da der kun medtages timebaserede vejr-variabler, så med "where"-linjen medtages der kun rækker hvor der er data fra hver time, da temp_mean_past1h er timebaseret.
+
+# Fjerner forbindelse til databasen
+dbDisconnect(connection)
+
+# Laver rds-fil af sql-query, så vi ikke behøver at connecte til sql og lave query i fremtiden.
+write_rds(samlet_sql_query, "data/samlet_sql_query.rds")
+```
+
+```{r}
+#| label: Færdiggører datasæt
+#| include: false
+#| results: false
+#| warning: false
+
+pacman::p_load(readr, dplyr, lubridate)
+
+# Henter samlet datasæt fra SQL-query
+samlet_sql_query <- read_rds("data/samlet_sql_query.rds")
+
+# 
+samlet_data <- as_tibble(samlet_sql_query) |> # Ændre til tibble, for letter at se kolonneformater
+  mutate(
+    dato = as.Date(dato, origin = "1970-01-01"), # Da dato er skrevet ind som dage siden 1970-01-01, så formateres de rigtigt her.
+    kampstart = hms(parse_time(kampstart)), # Ændre format på kampstart kolonnen, så der senere kan filtreres med -6 timer fra kampstart
+    tid = hms(parse_time(tid)) # Ændre også format her så den kan sammenlignes med kampstart
+  )
+
+samlet_data_flot <- samlet_data |> 
+  filter(
+    kampstart >= tid & kampstart - hours(6) <= tid # Filter hvor der kun indgår tider fra 6 timer før kampstart og frem til kampstart.
+  ) |> 
+  group_by(dato) |> # Grupperer efter dato, så alle rækker med samme dato behandles sammen.
+  mutate(
+    # Udregner gennemsnitlig vejrforhold 6 timer før kampstart til kampstart, da der er filtreret og grupperet efter dette.
+    mean_temp_6h = round(mean(temp_mean_past1h), 1), # Gennemsnitlig temperatur
+    mean_precip_6h = round(mean(precip_past1h, na.rm = TRUE), 1), # Gennemsnitlig mængde nedbør
+    mean_precip_dur_6h = round(mean(precip_dur_past1h, na.rm = TRUE), 1),# Gennemsnitlig antal minutter med nedbør
+    mean_wind_speed_6h = round(mean(wind_speed_past1h), 1), # Gennemsnitligt vindhastighed
+    dag_type = ifelse(ugedag %in% c("fredag","lørdag", "søndag"), "Weekend", "Hverdag") # Kolonne om det er weekend/hverdag
+  ) |> 
+  slice_head() |> # Da der lige nu er flere rækker fra hver time der er målt, 
+  # så fjerner vi her alle rækker bortset for 1 række for hver dato, da vi har grupperet efter hver dato.
+  ungroup() |> # Her fjernes grupperingen af dato
+  select( # Her udvælges de faktorer der skal bruges til videre forarbejdning og der fjernes dem som ikke længere skal bruges
+    år,
+    årstid,
+    kampstart,
+    dag,
+    ugedag,
+    dag_type,
+    runde,
+    ude,
+    antal_afhentede,
+    mean_afhentede,
+    sidste_afhentede,
+    mean_tilskuere,
+    sidste_tilskuer_antal,
+    mean_temp_6h,
+    mean_precip_6h,
+    mean_precip_dur_6h,
+    mean_wind_speed_6h
+  ) 
+
+# Laver en data.frame til senere at kunne vurdere om det er lokalopgør baseret på afstand.
+# Afstanden er ca. afrundet afstand taget fra google maps 
+afstande <- data.frame(
+  ude = c("FCM", "SIF", "RFC", "AGF", "AaB", "BIF", "FCK", "FCN", "ACH", "SJF", "VB", "OB", "HOB", "EFB", "LBK", "HIF", "FCV", "SDR"),
+  afstand_km = c(40, 50, 60, 80, 90, 200, 220, 240, 230, 150, 120, 130, 65, 175, 240, 150, 95, 150)
+)
+
+samlet_data_afstand <- samlet_data_flot |> 
+  left_join(afstande, by = c("ude" = "ude")) |> # Her joines "afstande" til samlet datasæt på kolonnen "ude" og "ude"
+  mutate(
+    lokalt_opgoer = ifelse(afstand_km <= 85, 1, 0) # Hvis afstanden er mindre end 85 km, så er det lokalt opgør (1),
+                                                   # hvis der er mere end 85 km så er det ikke lokalt opgør (0)
+  ) |> 
+  relocate(afstand_km, lokalt_opgoer, .after = ude)  # Flytter afstand_km og lokalt_opgoer efter ude
+
+# Tilføjer en ny kolonne 'tidspunktskategori baseret på kampstart.
+samlet_data_flot <- samlet_data_afstand |> 
+  mutate(
+    tidspunktskategori = case_when(
+      as.numeric(substr(kampstart, 1, 2)) < 15 ~ "Middag", # Før kl. 15 = Middag
+      as.numeric(substr(kampstart, 1, 2)) < 18 ~ "Eftermiddag", # Mellem 15 og 18 = Eftermiddag
+      TRUE ~ "Aften" # Og ellers er det aften
+    )
+  ) |> 
+  relocate(
+    tidspunktskategori, .after = dag_type # Flytter tidspunktkategori efter dag_type
+  )
+
+samlet_data_flot <- samlet_data_flot |> 
+  mutate(
+    mean_temp_6h_poly2 = poly(mean_temp_6h, degree = 2, raw = TRUE)[, 2]) # Laver kolonne med gennemsnitlig temperatur af
+                                                                         # andengradspolynomium 
+
+samlet_data_flot <- samlet_data_flot |> 
+  mutate(
+    regn_6h = mean_precip_6h * mean_precip_dur_6h, # Kombinerer regnmængde og tidslængde da der var høj korrelation
+    måned_tid = case_when( # Laver ny kolonne hvor der er opdelt efter om det er start, midt eller slutningen af måneden
+      dag <= 10 ~ "start", # start er de første 10 dage i måneden
+      dag > 10 & dag <= 20 ~ "midt", # midt er dag 11-20
+      dag > 20 ~ "slut" # slut er dag 21 og frem
+    )) |> 
+  relocate(
+    måned_tid, .after = dag # Flytter måned_tid til efter dag.
+  )
+
+# Beregn gennemsnitligt tilskuertal pr. modstander og klassificér dem i type A, B, C
+modstander_tilskuere <- samlet_data_flot |> 
+  group_by(ude) |> 
+  summarise(
+    gennemsnit_tilskuere = mean(mean_tilskuere, na.rm = TRUE)
+  ) |> 
+  arrange(desc(gennemsnit_tilskuere)) %>%
+  mutate(
+    type = case_when(
+      row_number() <= 3 ~ "A",  # Top 3 hold er A (BIF, FCM, FCK)
+      row_number() <= 7 ~ "B",  # Næste 4 hold er B (AGF, HIF, AaB, RFC)
+      TRUE ~ "C"               # Resterende hold er C (VB, SIF, LBK, FCN, OB, FCV, HOB, EFB, SDR, SJF, ACH)
+    )
+  )
+
+# Joiner modstanderklassifikation (type) sammen med samlet datasæt på "ude"-kolonnen
+samlet_data_flot <- samlet_data_flot |> 
+  left_join(modstander_tilskuere, by = "ude") |> 
+  relocate(type, .after = ude)  # Flyt 'type' til efter 'ude'
+
+samlet_data_flot <- samlet_data_flot |> 
+  mutate(
+    kombi_afhentede = (mean_afhentede + sidste_afhentede) / 2, # mean_afhentede og sidste_afhentede er kombineret pga. høj korrelation
+    kombi_tilskuere = (mean_tilskuere + sidste_tilskuer_antal) / 2 # disse er også kombineret pga. høj korrelation ifølge GVIF
+  ) |> 
+  select( # Fjerner faktorer brugt til udregning af kombi-faktorer + fjernet ugedag og mean_temp_6h pga. høj korrelation.
+    antal_afhentede,
+    år,
+    årstid,
+    måned_tid,
+    dag_type,
+    tidspunktskategori,
+    runde,
+    type,
+    afstand_km,
+    lokalt_opgoer,
+    mean_temp_6h_poly2,
+    regn_6h,
+    mean_wind_speed_6h,
+    kombi_afhentede,
+    kombi_tilskuere
+    )
+
+# Laver rds-fil til at gemme datasættet til fremtidig brug
+write_rds(samlet_data_flot, "data/dataset.rds")
+```
+
+```{r}
+#| label: Machine Learning
+#| include: false
+#| results: false
+#| warning: false
+
+# Machine Learning -------------------------------------------------------------
+pacman::p_load( tidyverse, tidymodels, caret, ISLR2, glmnet, boot, leaps,
+               viridis, pls, car, corrplot)
+
+
+#------------------------------------------------------------------------------#
+# OBS! Kør koden fra toppen af for at få de samme resultater, 
+# da der kan forekomme forskellige resultater, når koden køres i små bidder.
+#------------------------------------------------------------------------------#
+
+
+# Indlæs dataset fra en RDS-fil
+dataset <- read_rds("data/dataset.rds")
+
+# Opret designmatrix og responsvektor
+x <- model.matrix(antal_afhentede ~ . - 1, dataset)
+y <- dataset$antal_afhentede
+
+# Udtræk kun de numeriske kolonner
+numeriske_variabler <- dataset[, sapply(dataset, is.numeric)]  
+
+# Opret en korrelationsmatrix for de numeriske variabler
+cor_matrix <- cor(numeriske_variabler)
+
+# Erstat eventuelle NA-værdier i korrelationsmatrixen med 0
+cor_matrix[is.na(cor_matrix)] <- 0
+
+# Visualiser korrelationsmatrix
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 100)
+
+# Opret lineær model
+model <- lm(antal_afhentede ~ ., data = dataset)
+
+# Beregn GVIF for modellen
+vif(model)
+
+summary(model)
+
+# Filtrer stærke korrelationer
+cor_matrix <- cor(x)
+cor_long <- as.data.frame(as.table(cor_matrix)) |> 
+  rename(Korrelation = Freq) |> 
+  filter(Var1 != Var2) |> 
+  filter(abs(Korrelation) > 0.75) |> 
+  arrange(desc(Korrelation))
+
+# Ridge og Lasso ---------------------------------------------------------------
+
+model <- lm(y ~ x)                     # Opret lineær model
+grid <- 10^seq(10, -2, length = 100)   # Skala for tuningparametre
+
+set.seed(123)                          # Sæt seed for reproducerbarhed
+train <- sample(1:nrow(x), nrow(x)*2/3) # Vælg 2/3 af rækkerne som træningsdata
+test <- (-train)                       # Resten bruges som testdata
+y.test <- y[test]                      # Responsvariabel for testdata
+
+# Ridge ------------------------------------------------------------------------
+
+ridge.mod <- glmnet(                   # Træn Ridge-model
+  x[train, ], 
+  y[train], 
+  alpha = 0,                           # alpha = 0 for Ridge
+  lambda = grid, 
+  thresh = 1e-12
+)
+
+set.seed(123)                          # Sæt seed for CV
+cv.out <- cv.glmnet(                   # Krydsvalidering for Ridge
+  x[train, ], 
+  y[train], 
+  alpha = 0,                           # alpha = 0 for Ridge
+  lambda = grid, 
+  nfolds = 5
+)
+
+bestlam <- cv.out$lambda.min           # Vælg bedste lambda
+rmse_ridge_cv <- sqrt(cv.out$cvm[cv.out$lambda == bestlam]) # Ridge RMSE CV: 143.9899
+
+ridge.pred <- predict(ridge.mod, s = bestlam, newx = x[test, ]) # Forudsig med Ridge
+rmse_ridge_test <- sqrt(mean((ridge.pred - y.test)^2))          # Ridge RMSE Test: 150.1857
+
+# Lasso ------------------------------------------------------------------------
+
+lasso.mod <- glmnet(                   # Træn Lasso-model
+  x[train, ], 
+  y[train], 
+  alpha = 1,                           # alpha = 1 for Lasso
+  lambda = grid, 
+  thresh = 1e-12
+)
+
+set.seed(123)                          # Sæt seed for CV
+cv.out <- cv.glmnet(                   # Krydsvalidering for Lasso
+  x[train, ], 
+  y[train], 
+  alpha = 1,                           # alpha = 1 for Lasso
+  lambda = grid, 
+  nfolds = 5
+)
+
+bestlam <- cv.out$lambda.min           # Vælg bedste lambda
+rmse_lasso_cv <- sqrt(cv.out$cvm[cv.out$lambda == bestlam]) # Lasso RMSE CV: 157.6606
+
+lasso.pred <- predict(lasso.mod, s = bestlam, newx = x[test, ]) # Forudsig med Lasso
+rmse_lasso_test <- sqrt(mean((lasso.pred - y.test)^2))          # Lasso RMSE Test: 175.3711
+
+
+# Naiv model--------------------------------------------------------------------
+# 0 features
+set.seed(123)
+glm.fit <- glm(antal_afhentede ~ 1, data = dataset[train, ]) # Træn naiv model (kun intercept)
+
+rmse_0_cv <- sqrt(cv.glm(dataset[train, ], glm.fit , K = 10)$delta[1]) # Naiv RMSE CV: 196.9186   
+
+rmse_0_test <- sqrt(mean((dataset[test, ]$antal_afhentede - 
+                            predict(glm.fit, dataset[test, ]))^2))       # Naiv RMSE Test: 175.2879
+
+
+# Best subset selection---------------------------------------------------------
+library(leaps)   # Indlæs bibliotek til best subset regression
+library(dplyr)   # Indlæs bibliotek til nem datamanipulation
+
+# Definer predict-funktion for regsubsets
+predict.regsubsets <- function(object, newdata, id, ...) {
+  form  <- as.formula(object$call[[2]])                # Ekstraher modelens formel
+  mat   <- model.matrix(form, newdata)                # Opret designmatrix til nye data
+  coefi <- coef(object, id = id)                      # Hent koefficienter for modelstørrelsen
+  xvars <- intersect(names(coefi), colnames(mat))     # Match variabler mellem model og data
+  if (length(xvars) == 0) stop("Ingen matchende variabler i data!") # Stop, hvis ingen match
+  mat[, xvars, drop = FALSE] %*% coefi                # Beregn forudsigelser
+}
+
+# Konverter kategoriske variabler til faktorer
+dataset <- dataset %>%
+  mutate(across(where(is.character), as.factor))      # Konverter alle character-kolonner til faktorer
+
+# Split data i trænings- og testdatasæt
+set.seed(123)                                         # Sæt seed for reproducerbarhed
+train <- sample(seq_len(nrow(dataset)), size = 0.7 * nrow(dataset)) # Vælg 70% til træning
+test  <- setdiff(seq_len(nrow(dataset)), train)       # Resterende 30% til test
+samlet_train <- dataset[train, ]                     # Træningsdatasæt
+samlet_test  <- dataset[test, ]                      # Testdatasæt
+
+# Harmoniser faktorniveauer mellem trænings- og testdata
+categorical_vars <- names(Filter(is.factor, dataset)) # Identificer faktorkolonner
+for (col in categorical_vars) {
+  samlet_test[[col]] <- factor(samlet_test[[col]], levels = levels(samlet_train[[col]])) # Ensret faktorniveauer
+}
+
+# Opsætning til K-fold Cross-Validation
+k <- 10                                              # Antal fold til K-fold cross-validation
+n <- nrow(samlet_train)                              # Antal observationer i træningsdata
+set.seed(1)                                          # Sæt seed for reproducerbarhed
+folds <- sample(rep(1:k, length = n))                # Opret fold
+
+# Initialiser matrix til at gemme cross-validation fejl
+cv.errors <- matrix(NA, k, 14, dimnames = list(NULL, paste(1:14))) # Gem fejl for hver fold og modelstørrelse
+
+# Udfør K-fold Cross-Validation
+for (j in 1:k) {                                     # Loop gennem fold
+  best.fit <- regsubsets(antal_afhentede ~ ., data = samlet_train[folds != j, ], nvmax = 14) # Træn model
+  for (i in 1:14) {                                  # Loop gennem kandidatmodelstørrelser
+    pred <- tryCatch({
+      predict.regsubsets(best.fit, samlet_train[folds == j, ], id = i) # Forudsig
+    }, error = function(e) {
+      return(rep(NA, sum(folds == j)))             # Returner NA ved fejl
+    })
+    cv.errors[j, i] <- mean((samlet_train$antal_afhentede[folds == j] - pred)^2, na.rm = TRUE) # Beregn MSE
+  }
+}
+
+# Beregn gennemsnitlig cross-validation fejl for hver modelstørrelse
+mean.cv.errors <- apply(cv.errors, 2, function(x) mean(x, na.rm = TRUE))
+
+# Ignorer fejlende modeller (f.eks. model 14) ved beregning af minimum
+valid_models <- which(is.finite(mean.cv.errors))    # Find gyldige modeller
+mean.cv.errors <- mean.cv.errors[valid_models]      # Behold kun gyldige modeller
+optimal_model_size <- valid_models[which.min(mean.cv.errors)] # Find optimal model
+
+# Plot gennemsnitlige cross-validation fejl med alle værdier på x-aksen
+plot(mean.cv.errors, type = "b", pch = 16, col = "darkred", 
+     xlab = "Antal prædiktorer", ylab = "Gennemsnitlig CV MSE", 
+     main = "Modelstørrelse vs. Gennemsnitlig CV MSE", xaxt = "n")
+axis(1, at = 1:length(mean.cv.errors), labels = 1:length(mean.cv.errors))  # Tilføj alle x-værdier
+grid()  # Tilføj gitterlinjer
+
+# Træn den bedste model på alle træningsdata
+reg.best <- regsubsets(antal_afhentede ~ ., data = samlet_train, nvmax = 14)
+best_model_coefficients <- coef(reg.best, optimal_model_size) # Hent koefficienter
+print(best_model_coefficients)                                # Print koefficienter
+
+# Forudsig på testdata
+pred_best_subset <- predict.regsubsets(reg.best, samlet_test, id = optimal_model_size)
+
+# Beregn MSE og RMSE på testdata
+mse_best_subset <- mean((samlet_test$antal_afhentede - pred_best_subset)^2) 
+rmse_best_subset <- sqrt(mse_best_subset)                    # Bestsubset RMSE Test: 174.8824
+
+# Beregn RMSE fra K-fold Cross-Validation
+rmse_bestsubset_cv <- sqrt(min(mean.cv.errors))              # Bestsubset RMSE CV: 154.7378
+
+
+# Sammenligning: 3 og 13 prædiktorer--------------------------------------------
+
+# Model med 13 prædiktorer
+pred_model_13 <- predict.regsubsets(reg.best, samlet_test, id = 13)
+mse_model_13 <- mean((samlet_test$antal_afhentede - pred_model_13)^2) 
+rmse_model_13 <- sqrt(mse_model_13) # RMSE for model med 13 prædiktorer: 174.8824
+
+# Model med 3 prædiktorer
+pred_model_3 <- predict.regsubsets(reg.best, samlet_test, id = 3)
+mse_model_3 <- mean((samlet_test$antal_afhentede - pred_model_3)^2)    
+rmse_model_3 <- sqrt(mse_model_3) # RMSE for model med 3 prædiktorer: 138.2644                                     
+
+# Gennemsnitlig CV RMSE for model med 3 prædiktorer
+cv_rmse_model_3 <- sqrt(mean.cv.errors[3]) # CV RMSE for model med 3 prædiktorer: 156.9426                            
+
+# Hent koefficienterne for model med 3 prædiktorer
+model_3_coefficients <- coef(reg.best, id = 3)
+
+# Udskriv koefficienterne
+print(model_3_coefficients)
+```
+
+# Abstract
+
+Formålet med dette projekt er at undersøge, hvordan Viborg FF kan bruge data til at forudsige antallet af afhentede guldmenuer til deres hjemmekampe.
+
+Projektet anvender CRISP-DM-modellen som grundlag for analysen. Derudover analyseres virksomhedens datamodenhed vha. Alexandra-modellen, og værktøjet Data Product Canvas anvendes til at skabe struktur og overblik over arbejdet med data. Undersøgelserne i denne opgave er foretaget på baggrund af datasættet “Guld”, der indeholder informationer om bl.a. antal afhentede guldmenuer. Derudover er der anvendt data fra DMI og Superstats.
+
+Ved hjælp af prædiktionsmodeller inden for machine learning og en analyse af interne og eksterne faktorer, gives en række løsningsforslag til virksomheden. Analyserne har dannet grundlag for følgende anbefalinger: - Fortsætte med at uddanne personalet inden for håndtering og anvendelse af data, så det bliver en fast del af arbejdsgangen - Indsamling af data om VIP-gæsternes afhentningstidspunkter kan potentielt være med til at identificere mønstre i deres adfærd
+
+Samlet set kan en kombination af disse initiativer ikke blot kun hjælpe VFF med at reducere spild, men også fremme klubbens bæredygtighedsprofil, der får dem til at fremstå som en ansvarlig og moderne aktør, hvilket skaber både værdi for miljøet og klubbens interesserer.
+
+# Problemstilling
+
+Fodboldklubben VFF’s første store, sportslige højdepunkt fandt sted i 1924. Denne sejr i datidens Mesterrække lagde fundamentet for holdets kamp op gennem divisionerne (VFF, u.d.). I 1993 rykkede klubben for første gang op i Superligaen (Best of Viborg, u.d.). Med undtagelse af ganske få sæsoner med nedrykninger til divisionerne, har VFF været en fast del af Superligaen siden 1993 (Superstats, u.d.).
+
+I takt med teknologiens udvikling, er dataindsamling- og analyse blevet en fast del af træningen blandt mange fodboldhold. Redskaber som videoanalyser, tracking af spillernes fysiske præstationer og databaseret scouting har gennem de seneste år vundet indpas hos mange hold både træning og strategi i sporten (Science Report, u.d.).
+
+VFF’s dataafdeling afspejler denne udvikling. Klubben inddeler deres data i administrativt data og sportslig data. Administrativt data dækker over salg, marketing, økonomi og Kløverfonden. Sportslig data er data, der omfatter scouting, spillernes performance og sundhed.
+
+Denne opgave tager udgangspunkt i administrativt data, og formålet med opgaven er at forudsige antallet af afhentede, forudbestilte guldmenuer blandt VIP-gæster til fremtidige kampe. En forudsigelse af dette vil potentielt reducere madspild og minimere unødige omkostninger for klubben. På baggrund af denne problemstilling præsenteres to hypoteser i det følgende afsnit.
+
+## Hypoteser
+
+Der er opstillet følgende hypoteser for opgaven:
+
+-   H1: Dårlige vejrforhold (fx. regn, kulde og blæst) reducerer afhentningsgraden på kampdagen.
+
+-   H2: Afhentningsgraden er højere ved kampe med lokale rivaliseringer og stiger yderligere ved store sportslige begivenheder.
+
+Hypoteserne udgør fundamentet for den analytiske tilgang, der har til formål at afdække forskellige eksterne variablers påvirkning på afhentningen af guldmenuer og forbedre præcisionen i forudsigelsen af antallet til VFF's fremtidige hjemmekampe. I opgaven anvendes forskellige prædiktionsmodeller til forudsigelse, herunder Best Subset Selection, Ridge Regression, Lasso Regression og en naiv model som sammenligningsgrundlag for at udvikle en model til at forudsige antallet af afhentede guldmenuer ved fremtidige VFF-kampe. Det leder til følgende problemformulering:
+
+## Problemformulering
+
+Hvordan kan VFF anvende en datadrevet tilgang til at forudsige antallet af afhentede guldmenuer blandt VIP-gæster til fremtidige kampe, og hvordan kan indsigt i eksterne faktorer bidrage til bedre ressourceudnyttelse og reduktion af madspild?
+
+## Definitioner/forkortelser
+
+Viborg F.F. Prof. Fodbold A/S: Herefter omtalt som “VFF” i opgaven. Når VFF nævnes, refereres der til virksomheden, medmindre fodboldholdet eksplicit er angivet.
+
+VIP-gæster: I denne opgave refererer VIP-gæster til kunder med særlige fordele og adgang til forudbestilling af guldmenuer. Segmentet omfatter sponsorbilletter, sæsonabonnementer og billetabonnementer med guldmenu. Sponsorbilletter udstedes som en del af sponsoraftaler og kræver aktivt valg af guldmenu ved billetaktivering. Sæsonabonnementer inkluderer automatisk guldmenu, forudsat en udnyttelsesgrad på 65 %, mens billetabonnementer, købt af private kunder, kræver aktivt valg af både sæder og guldmenu ved hver brug.
+
+Guldmenu: En guldmenu består af en frankfurter med brød, to grillpølser med brød eller en fransk hotdog samt en drikkevare, som kan være sodavand, øl eller kaffe. Menuen afhentes i stadionets boder ved scanning af billet.
+
+## Afgrænsning
+
+Formålet med opgaven er at udvikle en datadrevet løsning til at forudsige antallet af afhentede guldmenuer. Analysen fokuserer derfor kun på de kundesegmenter, der kan forudbestille guldmenuer. Det interne datasæt "Guld," leveret af VFF, indeholder oplysninger om afhentninger, men ikke adfærden for de enkelte segmenter (sponsorbilletter, sæsonabonnementer og billetabonnementer). Derfor behandles segmenterne som én samlet enhed, hvilket begrænser muligheden for at analysere forskelle i adfærd.
+
+Kun data fra VFF’s sæsoner i Superligaen er inkluderet (2013/2014, 2015/2016, 2016/2017, 2021/2022, 2022/2023 og 2023/2024), da antallet af forudbestillinger varierer betydeligt afhængigt af modstanderen. Data fra 1. division og udekampe er udeladt, da de vurderes irrelevante, og guldmenuer kun er tilgængelige på hjemmebane. Dette reducerer risikoen for bias og forhindrer fejlagtige estimater. Det er kun tilskuerdata fra Superstats, der er medtaget fra 2024/2025-sæsonen. ¨ Ud over det interne datasæt anvendes eksterne data fra Superstats og DMI. Det er kun tilskuerdata fra Superstats, der er medtaget fra 2024/2025-sæsonen.
+
+### AI-værktøjer
+
+I arbejdet med denne opgave er der anvendt ChatGPT (vers. GPT-4o) som et værktøj til at understøtte skriveprocessen. Konkret er ChatGPT blevet brugt til sparring, idégenerering, korrektur, sprogforbedring samt til trivielle kodestumper og lignende. Det skal dog understreges, at alle analyser, fortolkninger og konklusioner er udelukkende udarbejdet af os. Til transkription af interviews med VFF er værktøjet Sonix.ai blevet brugt til automatisk at udføre denne opgave. Herefter er relevante dele af transskriptionen manuelt blevet gennemgået for at sikre kvaliteten.
+
+## Struktur
+
+Opgavens struktur bygger på CRISP-DM modellen, hvor Data Understanding behandles i metodeafsnittet, Business Understanding, Data Preparation og Modeling præsenteres i analysen, og Evaluation berøres i diskussionsafsnittet. Eftersom det ikke kan fastslås, om de foreslåede løsninger vil blive implementeret eller integreret i VFF’s praksis, er Deployment ikke medtaget i analysen. Bilag 1 indeholder en gennemgang af CRISP-DM.
+
+# Videnskabsteori
+
+Opgavens videnskabsteoretiske ramme bygger på pragmatismen, med særligt fokus på tre aspekter: den overordnede erkendelsesinteresse samt sandhedsteori og det epistemologiske grundlag.
+
+Pragmatismen prioriterer praksis og handling over abstrakt teori og fremhæver menneskelig erfaring som central for forståelsen af verden (Egholm, 2014:172). Tilgangen er fremadrettet og søger at forbedre praksis gennem erfaring og handling med det formål at skabe praktiske løsninger på fremtidige udfordringer (Egholm, 2014:179). Den pragmatiske sandhedsteori vurderer sandhed ud fra dens anvendelighed og brugbarhed til at forklare observerede fænomener (Egholm, 2014:178). I denne sammenhæng betragtes viden som situeret og afhængig af konteksten, hvor dens værdi bestemmes af dens praktiske relevans (Egholm, 2014:173).
+
+Dette gør pragmatismen særligt relevant for VFF’s behov for at forudsige antallet af afhentede guldmenuer til fremtidige kampe. Ved at kombinere teoretisk indsigt med datadrevne løsninger kan klubben opnå en dybere forståelse af de faktorer, der påvirker afhentningsadfærden. Denne tilgang bidrager ikke alene til at forbedre forudsigelsernes præcision, men reducerer også spild, optimerer ressourceudnyttelsen og styrker VFF’s forretningsgrundlag. Disse perspektiver danner udgangspunktet for den metodiske tilgang, som uddybes i det følgende afsnit.
+
+# Metode
+
+Dette afsnit beskriver den metodiske tilgang bag opgaven og er inddelt i tre dele. Først præsenteres den abduktive tilgang som ramme for undersøgelsen og metodetrianguleringen. Dernæst behandles overvejelser om dataindsamling og metodevalg. Til sidst vurderes datagrundlagets reliabilitet og validitet for at sikre troværdighed og relevans i forhold til problemformuleringen.
+
+## Abduktion
+
+Med afsæt i pragmatismen gennem en abduktiv tilgang, beskrives abduktion som en proces, hvor mulige hypoteser formuleres som “kvalificerede gæt” og efterfølgende undersøges systematisk gennem afprøvning på relevant materiale. Denne tilgang er særligt anvendelig i undersøgelser, hvor årsagssammenhænge ikke er umiddelbart synlige, og hvor målet er at finde frem til de mest sandsynlige forklaringer (Egholm, 2014:176-77). I opgaven er abduktion anvendt som en overordnet ramme til at formulere og teste hypoteser om, hvordan eksterne faktorer som vejrforhold, modstanderens popularitet og VFF’s præstation i Superligaen påvirker VIP-gæsters afhentning af guldmenuer. Hypoteserne er udarbejdet med udgangspunkt i kvalitative gruppeinterviews med VFF’s medarbejdere, der gav en eksplorativ indsigt i problemfeltet. Den abduktive tilgang har vist sig særlig nyttig, da den muliggør systematisk at undersøge og efterprøve de mest plausible hypoteser, mens andre forkastes (Egholm 2014:189). For at undersøge disse hypoteser anvendes metodetriangulering, der refererer til brugen af mere end én metode til dataindsamling. Ved at kombinere kvalitative og kvantitative metoder kan denne metodetriangulering bidrage til en mere holistisk forståelse, idet metoderne kompenserer for hinandens respektive svagheder og mangler (Andersen, 2009:164-65). Dette vil blive præsenteret i det følgende afsnit.
+
+## Kvalitativ empiri
+
+Dataindsamlingen af den kvalitative del består af to gruppeinterviews med repræsentanter fra VFF’s forskellige afdelinger. Interviewene blev struktureret som semistrukturerede interviews, hvor en interviewguide med spørgsmål fordelt på forskellige temaer blev udarbejdet i fællesskab på holdet (Justesen & Mik-Meyer 2010: 55). Disse spørgsmål havde til formål at udforske centrale aspekter og opnå en eksplorativ forståelse af praksisser og udfordringer i VFF, samtidig med at relevante perspektiver fra organisationens forskellige afdelinger blev afdækket. Den kvalitative del har i denne sammenhæng fungeret som en forundersøgelse, der gennem gruppeinterviews har givet en eksplorativ afdækning af problemfeltet og fungeret som en vigtig inspiration til at identificere og udvælge relevante kvantitative data, der potentielt har indflydelse på afhentningen af guldmenuer.
+
+Gruppeinterviews blev lydoptaget og efterfølgende transskriberet ved hjælp af værktøjet Sonix.ai, som automatiserede den initiale transskriberingsproces. Det bemærkes dog, at kun de dele, der vurderes som relevante for opgavens problemstilling, er inkluderet i opgavens bilag.
+
+## Kvantitativ empiri
+
+Dataindsamlingen af de kvantitative data består af eksterne kilder som DMI og Superstats.dk samt det interne datasæt “Guld” fra VFF. Fra DMI er meteorologiske variabler som temperatur, nedbør og vind indsamlet via API, mens Superstats.dk er webscrapet for oplysninger om bl.a. spillesæson, kampdato, modstanderhold, kampresultat og tilskuertal. Det interne datasæt fra VFF indeholder oplysninger om kampdato, modstander, antal forudbestilte og afhentede guldmenuer.
+
+Dataindsamlingsprocessen har været præget af en fleksibel og iterativ arbejdsmetode inspireret af agile principper. Denne tilgang har også understøttet en abduktiv metode, hvor hypoteser blev testet og tilpasset gennem hele processen. Den iterative arbejdsmetode kræver dog særlig opmærksomhed på datagrundlagets reliabilitet og validitet, hvilket behandles i det følgende afsnit.
+
+## Reliabilitet og validitet
+
+Afslutningsvis behandles validitet og reliabilitet, som er centrale kvalitetskriterier til undersøgelsen. Validitet vurderer, om undersøgelsens fund belyser forskningsspørgsmålet, mens reliabilitet fokuserer på metodernes konsistens og reproducerbarhed (Justesen & Mik-Meyer 2010: 39-42).
+
+Validiteten af de kvalitative data fra gruppeinterviews med medarbejdere fra VFF’s forskellige afdelinger understøttes af den semistrukturerede interviewguide, der er udformet til at afdække både organisatoriske og operationelle perspektiver i VFF. Det var dog en udfordring for reliabiliteten, at gruppen bestod af over 50 deltagere, da sociale dynamikker i så stor en gruppe kan gøre det sværere for nogle at dele deres ærlige holdninger. Dette kan særligt have påvirket datagrundlaget ved at begrænse nuancerede indsigter. I en pragmatisk kontekst kan disse begrænsninger dog forstås som en del af en eksplorativ tilgang, hvor de kvalitative data fungerer som et første skridt til at identificere praksisnære problemstillinger. For at styrke reliabiliteten blev interviewene transskriberet ved hjælp af Sonix.ai og efterfølgende manuelt gennemgået for at sikre nøjagtighed.
+
+Validiteten af de kvantitative data blev sikret ved nøje udvælgelse af vejrfaktorer fra DMI, kampkarakteristika fra Superstats.dk og interne datasæt fra VFF. Reliabiliteten blev styrket ved brug af programmeringssprog som R, der reducerede risikoen for manuelle fejl og sikrede reproducerbare analyser. Desuden blev data fra 1. division ekskluderet for at undgå bias og skabe en mere pålidelig analyse, der er tilpasset Superligaens kontekst og relevante kampe.
+
+Kombinationen af kvalitative og kvantitative metoder sikrer både metodisk troværdighed og praktisk anvendelighed, hvilket er centralt i en pragmatisk tilgang. Denne tilgang lægger vægt på resultaternes evne til at skabe handling og informere beslutninger (Egholm, 2014:179). På dette grundlag indledes analysen med en undersøgelse af VFF’s forretningskontekst for at identificere de variabler, der kan understøtte strategiske anbefalinger.
+
+# Analyse - CRISP-DM
+
+Analysen bygger på følgende faser i CRIPS-DM: Business Understanding, Data Preparation og Modeling.
+
+## Business Understanding
+
+For at kunne træffe datadrevne beslutninger på et oplyst grundlag kræves et godt indblik og en dyb forståelse af virksomhedens fundament. Dette opnås ved at gennemføre en række analyser, herunder en undersøgelse af virksomhedstype, produktsortiment, anvendelse af Data Product Canvas (DPC) og Alexandra-modellen.
+
+VFF fremstår som en multifacetteret virksomhed, der kombinerer sport med en række kommercielle aktiviteter rettet mod både B2B- og B2C-markeder. VFF udtrykker sin digitale tilstedeværelse gennem e-handelsplatformen Kløvershoppen.dk, hvor merchandise bidrager til at styrke klubbens identitet. Billetsalget via klubbens hjemmeside afspejler en strategisk kundeorientering og udnyttelse af digitale salgskanaler (Viborg FF, u.d.). Derudover integrerer VFF produktion og salg af mad og drikke på stadion, hvilket både bidrager til forbedret kundeoplevelse gennem pakkeløsninger som guldmenuer til VIP-gæsterne (Kløvershoppen, u.d.).
+
+Samlet set fremstår VFF som en organisation med mange facetter bestående af service og fysiske produkter til både B2B og B2C markedet. Den multifacetterede struktur gør det muligt for klubben at operere på tværs af flere markeder og skabe en balance, der forener kommercielle interesser med sportslige mål (Viborg FF, u.d.).
+
+## Data Product Canvas
+
+For at understøtte datadrevne beslutninger er Data Product Canvas (DPC) blevet anvendt som et planlægningsværktøj. DPC hjælper med at skabe overblik og struktur i udviklingen af datadrevne projekter (Carvalho, 2022). På grund af opgavens begrænsede omfang er det ikke muligt at gå i dybden med alle elementerne i DPC. En komplet skitsering findes i bilag 2, mens de mest relevante dele fremhæves i dette afsnit.
+
+Anvendelsen af DPC har spillet en central rolle i at skabe struktur og fokus i projektarbejdet. Værktøjet har understøttet en systematisk tilgang og samtidig givet plads til en fleksibel arbejdsproces, hvor vi løbende har tilpasset vores indsats baseret på nye indsigter. Den iterative arbejdsform – præget af både pragmatik og en agil tilgang – har været afgørende. Gennem gentagne tests af hypoteser, analyser af data og justeringer af vores handlinger har vi sikret, at løsningerne både er relevante og praktisk anvendelige for VFF.
+
+Samlet set har DPC bidraget til at skabe et klart overblik, hvor detaljeret dataanalyse er blevet koblet med målet om at forbedre præcisionen i forudsigelsen af guldmenuerne. Værktøjet har været en hjælp til at håndtere projektets kompleksitet og samtidig bevare fokus på, hvordan de forskellige aspekter hænger sammen. For at udnytte data endnu mere effektivt er det dog nødvendigt at forstå VFF’s nuværende niveau af datamodenhed, som uddybes i næste afsnit.
+
+## Datamodenhed
+
+Der er udarbejdet en analyse af VFF’s datamodenhed med udgangspunkt i Alexandra-modellen (Alexandra Instituttet, 2020). En mere dybdegående gennemgang af analysen findes i bilag 3.
+
+Datamodenheden i virksomhedens driftsafdeling og marketingafdeling bliver analyseret, og det vurderes ud fra analysen, at disse afdelinger befinder sig på to forskellige trin i Alexandra-modellen (Alexandra Instituttet, 2020). Driftsafdelingen arbejder fortsat med at gøre data til en fast del af processerne og opgaverne, og vurderes derfor til at være på trin 3 i Alexandra-modellen. Marketingafdelingen vurderes derimod til at befinde sig på trin 4, da deres arbejde med data er en fast del af afdelingens arbejde, og at data bruges strategisk og danner baggrund og mål for virksomhedens strategi.
+
+*“En forudsætning for at nå vores opsatte mål er, at vi hele tiden formår at arbejde smartere. Vi tror på, at digitalisering og arbejdet med data kan hjælpe os hertil og dermed give os en konkurrencemæssig fordel – både på og uden for banen.”* (Nørgaard og Jakobsen, 2024).
+
+Det vurderes på baggrund af analysen, at VFF som helhed befinder sig i fase 3 i Alexandra-modellen. Det vurderes desuden, at de ligger et sted mellem trin 1 og trin 2. Det skyldes, at der i virksomheden fortsat arbejdes med at gøre dataanalyser til en fast del af forretningsstrategien. Desuden er arbejdet med data som baggrund for strategiske mål et relativt nyt tiltag i virksomheden.
+
+For at avancere yderligere i datamodenhed, bør VFF bl.a. begynde at bruge data mere til optimering af produkter og services. Data er endnu ikke en grundsten i alle virksomhedens afdelinger, og for at kunne integrere brugen af data på tværs af afdelinger, mangler der fortsat at blive uddannet personale i håndtering af data.
+
+“*Jeg tror mange har fået set, at det er da en god idé. Men det der med lige at gøre det, og så nogle gange stole på noget data, som måske talte imod ens egen mavefornemmelse, tror jeg er en svær øvelse.*” (Bilag 8).
+
+## Data Preparation
+
+For at skabe struktur og overblik blev koderne i projektet udarbejdet i særskilte filer, der til slut blev samlet i en enkelt fil. Nedenfor præsenteres en oversigt over de enkelte dele.
+
+Opgavens analyse tager udgangspunkt i “antal_afhentede” (“Guld_menu_stk” i datasættet “Guld”) som vores y-variabel. En detaljeret oversigt over forklaringerne på de tilvalgte variabler findes i bilag 5.
+
+Der er lavet webscraping fra Superstats.dk. Sæsonerne 2007/2008 og tidligere er fravalgt for at undgå at trække det nuværende gennemsnitlige antal tilskuere unødigt meget ned, da det gennemsnitlige antal tilskuere er væsentligt lavere i de tidligere sæsoner.
+
+Der hentes data vha. API fra dmi.dk. Vi laver et loop, hvor datoer matches med kampdage. Det drejer sig om de kampdage, der er i datasættet “vff_1eksamen”, som er blevet lavet. Derudover indhentes alle parametre, der er tilgængelige på DMI, for at have muligheden for at teste korrelation på alle vejrparametre.
+
+Der er oprettet en SQLite-database, hvor datasættene fra VFF, Superstats og DMI er importeret. Dette muliggør at samle dataene ét sted og nemt udføre joins for at tilgå de ønskede data.
+
+Efter hentning af den nødvendige data fra SQL, færdiggøres de variabler, som det endelige datasæt skal bestå af. Der er testet forskellige versioner af det endelige datasæt med forskellige x-variabler for multikollinearitet. Vi fravalgte og ændrede:
+
+-   “mean_tilskuere” og “sidste_antal_tilskuere” blev kombineret til “kombi_tilskuere” pga. GVIF på 4,6 på mean_tilskuere. (Bilag 7)
+
+-   Ligeledes blev “kombi_afhentede” lavet, da “mean_afhentede” havde en GVIF på 5,3.
+
+-   Variablen “ugedag” blev fjernet pga. for høj korrelation med “dag_type”.
+
+-   “Mean_precip_dur6h” og “mean_precip6h” blev kombineret til “regn_6h” pga. korrelation på 0,89 mellem de to variabler.
+
+-   “Mean_temp_6h” fravalgt pga. korrelation på 0,96 med “mean_temp_6h_poly2”
+
+## Modeling
+
+I denne del blev metoderne Ridge, Lasso, Naiv-model og Best Subset Selection anvendt. Målet er at identificere en model, der både kunne minimere den gennemsnitlige krydsvalideringsfejl (CV-RMSE) og opnå en balance mellem præcision og modelkompleksitet.
+
+Ridge kom frem til resultaterne med en test-RMSE på 150,19 og en CV-RMSE på 143,99. Lasso leverede en test-RMSE på 175,37 og en CV-RMSE på 157,66, hvilket gjorde den mindre præcis end Ridge. Naiv-modellen blev anvendt som reference og havde som forventet de højeste fejl med en test-RMSE på 175,29 og en CV-RMSE på 196,92.
+
+Ved Best Subset Selection blev modellen med 13 prædiktorer først identificeret af R som den bedste løsning, baseret på dens lave gennemsnitlige CV-RMSE på 154,74. Dens test-RMSE på 174,88 afslørede dog tegn på overfitting. Som det fremgår af figur 1 ses det dog, at en model med kun tre prædiktorer har tilnærmelsesvis en tæt fejl sammenlignet med 13 prædiktorer. Efter beregninger viste modellen med tre prædiktorer en test-RMSE på 138,26 og en CV-RMSE på 156,95, hvilket repræsenterer en minimal forskel i forhold til modellen med 13 prædiktorer, men med væsentligt lavere kompleksitet.
+
+![](images/Modeloversigt.PNG){fig-alt="Figur 1"}
+
+Sammenfattende understøtter den grafiske analyse og sammenligningerne, at Best Subset Selection med tre prædiktorer er den mest optimale model på tværs af metoderne. Modellen præsterer med en betydelig bedre balance mellem præcision og kompleksitet, idet den marginale forbedring i præcision ved modellen med 13 prædiktorer ikke retfærdiggør dens højere kompleksitet. Resultaterne af RMSE fremgår på tabellen i bilag 4.
+
+# Evaluation
+
+Afsnittet vurderer analysens resultater i forhold til hypoteserne og belyser udfordringerne i modellerne. På baggrund heraf præsenteres løsningsforslag, der understøtter klubbens mål.
+
+## Evaluering af hypoteser
+
+I dette afsnit vurderes resultaterne i forhold til de opstillede hypoteser, jf. afsnit 1.1, og deres praktiske indflydelse på afhentningen af guldmenuer. De eksakte værdier og koefficienter fra de anvendte modeller er præsenteret i bilag 7.
+
+I den første hypotese om vejrfaktorers påvirkning på afhentningen af guldmenuer viser analysen, at regnintensitet reducerer afhentningsgraden med 20-24 afhentninger pr. enhed stigning, med koefficienter på -20,30 (Lasso) og -24,21 (Ridge). Temperatur har en marginal positiv effekt på 0,28 (Lasso) og 0,35 (Ridge), mens vindhastighed blev ekskluderet i Lasso og kun havde en minimal effekt i Ridge (0,40). Regn fremstår som den mest signifikante vejrfaktor, mens temperatur og vind spiller en mindre rolle. Ingen vejrfaktorer blev inkluderet i Best Subset Selection, hvilket antyder, at deres samlede bidrag til forudsigelsesmodellen er begrænset. Samlet set bør regn prioriteres i planlægning og forudsigelser, mens temperatur og vind kun overvejes i særlige tilfælde.
+
+I den anden hypotese om afhentningsgradens stigning ved lokale rivaliseringer og store sportslige begivenheder viser analysen, at kampens sportslige betydning har en væsentlig effekt. Kampe mod B- og C-hold mindsker afhentningsgraden med op til hhv. 82,75 og 94,71 (Ridge) sammenlignet med A-hold. Lokalopgør har en mere moderat effekt med en stigning på 35,77 (Ridge), men blev ekskluderet i Lasso. Historiske data på afhentningstallet og specifikke årstal blev prioriteret i Best Subset Selection, hvilket indikerer, at kampens type har størst betydning, mens lokalopgør og afstand spiller en mindre rolle.
+
+På trods af modellernes evne til at forudsige afhentningsmønstre er der visse begrænsninger. Det er vanskeligt at afgøre, om VIP-gæsterne undlader at hente deres guldmenu på grund af personlige årsager, som at de allerede har spist hjemmefra, er blevet syg, eller om det faktum, at guldmenuerne fås gratis via sponsorbilletter, reducerer incitamentet til afhentning. Disse faktorer ligger uden for modellernes rækkevidde og kan påvirke præcisionen i forudsigelserne.
+
+## Anbefalinger
+
+For at forudsige antallet af guldmenuer til VFF’s hjemmekampe og samtidig understøtte klubbens kommercielle og sportslige mål foreslås det på baggrund af denne opgaves fund og indsigter, at VFF implementerer en strategi, der kombinerer optimering af afhentningsgraden med initiativer, der styrker bæredygtighedsprofilen. En af forudsætningerne for at nå i mål med et eller flere af disse løsningsforslag, er at VFF fortsætter med at uddanne deres personale inden for håndtering af og anvendelse af data i det daglige arbejde. Dette vil være med til at øge virksomhedens datamodenhed.
+
+En indledende fase kunne være at indsamle timestamp-data for VIP-gæsternes afhentninger for at identificere mønstre i deres adfærd. Eksempelvis hvis data viser, at mange guldmenuer ikke afhentes efter første halvleg, kunne klubben overveje at sælge disse overskydende menuer til øvrige gæster til en reduceret pris. Dette ville ikke alene bidrage til at minimere madspild, men også generere en mindre indtægt på menuer, der allerede er betalt. Der anbefales i høj grad at VFF får indsamlet mere detaljerede data om deres VIP-gæster for at kunne udvikle mere præcise forudsigelsesmodeller.
+
+En anden tilgang, VFF kunne overveje, er at koble afhentning af guldmenuer til bæredygtige initiativer. Klubben kan f.eks. forpligte sig til at plante et træ eller støtte lokale initiativer, når et bestemt antal menuer er afhentet i sæsonen. Dette kan appellere til gæsters interesse for bæredygtighed og styrke klubbens image som en ansvarlig og moderne aktør.
+
+Samlet set kan en kombination af disse initiativer ikke blot kun hjælpe VFF med at reducere spild, men også styrke relationen til fans og partnere, fremme klubbens bæredygtighedsprofil og bidrage til balancen mellem kommercielle og sportslige mål.
+
+# Konklusion
+
+Denne opgave har undersøgt, hvordan man ved hjælp af prædiktionsmodeller og analyser af eksterne faktorer kan forudsige antallet af guldmenuer, der afhentes til VFF’s hjemmekampe.
+
+Den mest præcise model blev identificeret som Best Subset Selection med tre prædiktorer, som opnåede den laveste fejlrate med en test-RMSE på 138,26 guldmenuer pr. kamp. Trods modellens potentiale er præcisionen dog udfordret af utilstrækkelige data. Eksempelvis er det uklart, om VIP-gæsterne manglende afhentning skyldes personlige årsager, såsom at de allerede har spist hjemmefra, er blevet syg, eller om incitamentet til afhentning er lavt, fordi guldmenuerne udleveres gratis via sponsorbilletter. Disse forhold falder uden for modellens rækkevidde, men kan have stor betydning for resultaternes nøjagtighed.
+
+For at forbedre modellens præcision anbefales det, at VFF indsamler mere detaljerede data om afhentningsmønstre, herunder timestamp-data for de forskellige kundesegmenter, samt hvordan og hvornår afhentningerne finder sted. Ved at analysere disse data kan klubben opnå en bedre forståelse af, hvilke grupper der typisk ikke afhenter, og tilpasse deres indsats derefter. I forlængelse af denne indsats bør VFF arbejde strategisk med at integrere data som en central del af beslutningsprocesserne på tværs af organisationen. Ved at fremme en datadrevet kultur kan klubben sikre, at beslutninger træffes på et velunderbygget grundlag frem for på mavefornemmelser. Dette kræver øget datamodenhed, som kan opnås gennem målrettet uddannelse af medarbejdere og bedre udnyttelse af data i daglige og strategiske processer.
+
+En mere datadrevet tilgang kan reducere spild og sikre en bedre udnyttelse af ressourcer, hvilket styrker VFF’s bæredygtighedsprofil. Samtidig kan klubben ved at forene økonomiske og miljømæssige hensyn opnå sine kommercielle og sportslige mål og fremstå som en ansvarlig aktør, der skaber værdi for fans, partnere og miljøet.
+
+# Litteraturliste
+
+**Bøger**
+
+\- Andersen, I., 2008. Den Skinbarlige Virkelighed. Frederiksberg: Samfundslitteratur.
+
+\- Egholm, L., 2014. Videnskabsteori: Perspektiver på organisationer og samfund. 1. udgave. København: Hans Reitzels Forlag.
+
+**Webkilder**
+
+\- Best of Viborg, u.d. VFF – Prof Fodbold A/S. Tilgængelig fra: https://bestofviborg.dk/c/profiler/viborg-ff-prof-fodbold-as\[Tilgået 1. december 2024\].
+
+\- Carvalho, L., 2022. Data Product Canvas: A Practical Framework for Building High-Performance Data Products. Tilgængelig fra: https://medium.com/@leandroscarvalho/data-product-canvas-a-practical-framework-for-building-high-performance-data-products-7a1717f79f0 [Tilgået 23. december 2024].
+
+\- Chumbar, S., 2023. The CRISP-DM Process: A Comprehensive Guide. Tilgængelig fra: https://medium.com/@shawn.chumbar/the-crisp-dm-process-a-comprehensive-guide-4d893aecb151 [Tilgået 23. december 2024].
+
+\- Kløvershoppen, u.d. Spillertøj. Tilgængelig fra: https://klovershoppen.dk/collections/spillertoj \[Tilgået 14. december 2024\].
+
+\- Science Report, u.d. Big data har indtaget fodbolden. Tilgængelig fra: https://sciencereport.dk/forside/big-data-har-indtaget-fodbolden/ \[Tilgået 17. december 2024\].
+
+\- Superstats, u.d. VFF – Placering. Tilgængelig fra: https://superstats.dk/hold/vff/placering \[Tilgået 17. december 2024\].
+
+\- Viborg FF, u.d. Historien. Tilgængelig fra: https://www.vff.dk/viborg-f-f/historien \[Tilgået 14. december 2024\].
+
+\- Viborg FF, u.d. Officiel hjemmeside. Tilgængelig fra: https://vff.dk/ \[Tilgået 14. december 2024\].
+
+**Præsentationer**
+
+\- Christensen, P., 2024. Dania’s Dataanalytiker: Tirsdag den 5/11-2024. PowerPoint-præsentation den 5. november 2024. Viborg: Viborg FF.
+
+\- Nørgaard, T. og Jakobsen, D.L., 2024. VFF x Dania Tirsdag d. 5/11-2024. PowerPoint-præsentation den 5. november 2024. Viborg: Viborg FF.
+
+**AI-værktøjer**
+
+\- ChatGPT, version GPT-4, 2024. Genereret af OpenAI’s sprogmodel, december 2024. Tilgængelig fra: https://openai.com/chatgpt.
+
+\- Sonix.ai, 2024. Automatisk transkriptionsværktøj. Tilgængelig fra: https://sonix.ai.
+
+# Bilag
+
+1.  CRISP-DM
+2.  Data Product Canvas
+3.  AlexandraModellen
+4.  RMSE-Resultater
+5.  Forklaring af Datasættets variabler
+6.  Koefficienter
+7.  VIF-Factor
+8.  Interview
