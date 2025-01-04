@@ -1,4 +1,4 @@
-pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl, tibble, dslabs, jsonlite, rjson)
+pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl)
 
 # Importerer udleveret datasæt
 guld_raw <- read_excel("data/Guld.xlsx")
@@ -50,15 +50,14 @@ vff <- guld_clean |>
     sidste_spild = antal_spild[which.max(dato)],
   ) |> 
   ungroup() |> 
-  mutate(
+  mutate( # Laver kolonnen "årstid", ud fra kolonnen "måned"
     årstid = case_when(
-      måned %in% c("12", "01", "02") ~ "Vinter",
-      måned %in% c("03", "04", "05") ~ "Forår",
+      måned %in% c("12", "01", "02") ~ "Vinter", # December, Januar, Februar er "Vinter"
+      måned %in% c("03", "04", "05") ~ "Forår", # Osv...
       måned %in% c("06", "07", "08") ~ "Sommer",
       måned %in% c("09", "10", "11") ~ "Efterår"
   )) |> 
   relocate(årstid, .after = år)
 
+# Laver RDS-fil med vff-datasæt
 write_rds(vff, "data/vff.rds")
-
-vff <- read_rds("data/vff.rds")
