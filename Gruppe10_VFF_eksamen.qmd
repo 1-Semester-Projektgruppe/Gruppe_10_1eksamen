@@ -1,6 +1,6 @@
 ---
 title: "Vintereksamen - Dataanalyse"
-subtitle: "December 2024"
+subtitle: "Januar 2025"
 date: last-modified
 author:
 - Jing Wei
@@ -8,26 +8,16 @@ author:
 - Peter Quan Manh Thuong Pham
 - Marcus Vogt Nielsen
 format: 
-  pdf:
-   toc: true
-   toc-title: Indholdsfortegnelse
-   toc-depth: 4
-   number-sections: true
-   number-depth: 4
-   geometry:
-      - top=30mm
-      - left=20mm
-      - right=20mm
-      - bottom=30mm
-      - heightrounded
-execute: 
-  include: false # Fjerner koden
-  results: false # Fjerner resultater
-  warning: false # Fjerner advarsler
+  docx:
+    toc: true
+    toc-title: Indholdsfortegnelse
 ---
 
 ```{r}
 #| label: VFF-data
+#| include: false # Fjerner koden
+#| results: false # Fjerner resultater
+#| warning: false # Fjerner advarsler
 
 pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl)
 
@@ -95,6 +85,10 @@ write_rds(vff, "data/vff.rds")
 
 ```{r}
 #| label: Superstats Webscraping
+#| include: false 
+#| results: false
+#| warning: false
+
 pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl, tibble, dslabs, jsonlite, rjson)
 
 # Webscraping: Superstats.dk
@@ -159,6 +153,9 @@ write_rds(superstats_flot, "data/superstats.rds")
 
 ```{r}
 #| label: DMI API
+#| include: false
+#| results: false
+#| warning: false
 
 pacman::p_load(tidyverse, janitor, rvest, tidyr, lubridate, dplyr, readxl, tibble, dslabs, jsonlite, rjson)
 
@@ -225,6 +222,9 @@ write_rds(dmi, "data/dmi.rds")
 
 ```{r}
 #| label: SQL
+#| include: false
+#| results: false
+#| warning: false
 
 pacman::p_load(DBI, RSQLite, readr)
 
@@ -264,6 +264,9 @@ write_rds(samlet_sql_query, "data/samlet_sql_query.rds")
 
 ```{r}
 #| label: Færdiggører datasæt
+#| include: false
+#| results: false
+#| warning: false
 
 pacman::p_load(readr, dplyr, lubridate)
 
@@ -408,6 +411,10 @@ write_rds(samlet_data_flot, "data/dataset.rds")
 
 ```{r}
 #| label: Machine Learning
+#| include: false
+#| results: false
+#| warning: false
+
 # Machine Learning -------------------------------------------------------------
 pacman::p_load( tidyverse, tidymodels, caret, ISLR2, glmnet, boot, leaps,
                viridis, pls, car, corrplot)
@@ -639,13 +646,11 @@ Formålet med dette projekt er at undersøge, hvordan Viborg FF kan bruge data t
 
 Projektet anvender CRISP-DM-modellen som grundlag for analysen. Derudover analyseres virksomhedens datamodenhed vha. Alexandra-modellen, og værktøjet Data Product Canvas anvendes til at skabe struktur og overblik over arbejdet med data. Undersøgelserne i denne opgave er foretaget på baggrund af datasættet “Guld”, der indeholder informationer om bl.a. antal afhentede guldmenuer. Derudover er der anvendt data fra DMI og Superstats.
 
-Ved hjælp af prædiktionsmodeller inden for machine learning og en analyse af interne og eksterne faktorer, gives en række løsningsforslag til virksomheden. Analyserne har dannet grundlag for følgende anbefalinger:
-- Fortsætte med at uddanne personalet inden for håndtering og anvendelse af data, så det bliver en fast del af arbejdsgangen
-- Indsamling af data om VIP-gæsternes afhentningstidspunkter kan potentielt være med til at identificere mønstre i deres adfærd
+Ved hjælp af prædiktionsmodeller inden for machine learning og en analyse af interne og eksterne faktorer, gives en række løsningsforslag til virksomheden. Analyserne har dannet grundlag for følgende anbefalinger: - Fortsætte med at uddanne personalet inden for håndtering og anvendelse af data, så det bliver en fast del af arbejdsgangen - Indsamling af data om VIP-gæsternes afhentningstidspunkter kan potentielt være med til at identificere mønstre i deres adfærd
 
-Samlet set kan en kombination af disse initiativer ikke blot kun hjælpe VFF med at reducere spild, men også fremme klubbens bæredygtighedsprofil, der får dem til at fremstå som en ansvarlig og moderne aktør, hvilket skaber både værdi for miljøet og klubbens interesserer. 
+Samlet set kan en kombination af disse initiativer ikke blot kun hjælpe VFF med at reducere spild, men også fremme klubbens bæredygtighedsprofil, der får dem til at fremstå som en ansvarlig og moderne aktør, hvilket skaber både værdi for miljøet og klubbens interesserer.
 
-# 1. Problemstilling
+# Problemstilling
 
 Fodboldklubben VFF’s første store, sportslige højdepunkt fandt sted i 1924. Denne sejr i datidens Mesterrække lagde fundamentet for holdets kamp op gennem divisionerne (VFF, u.d.). I 1993 rykkede klubben for første gang op i Superligaen (Best of Viborg, u.d.). Med undtagelse af ganske få sæsoner med nedrykninger til divisionerne, har VFF været en fast del af Superligaen siden 1993 (Superstats, u.d.).
 
@@ -655,7 +660,7 @@ VFF’s dataafdeling afspejler denne udvikling. Klubben inddeler deres data i ad
 
 Denne opgave tager udgangspunkt i administrativt data, og formålet med opgaven er at forudsige antallet af afhentede, forudbestilte guldmenuer blandt VIP-gæster til fremtidige kampe. En forudsigelse af dette vil potentielt reducere madspild og minimere unødige omkostninger for klubben. På baggrund af denne problemstilling præsenteres to hypoteser i det følgende afsnit.
 
-## 1.1 Hypoteser
+## Hypoteser
 
 Der er opstillet følgende hypoteser for opgaven:
 
@@ -665,11 +670,11 @@ Der er opstillet følgende hypoteser for opgaven:
 
 Hypoteserne udgør fundamentet for den analytiske tilgang, der har til formål at afdække forskellige eksterne variablers påvirkning på afhentningen af guldmenuer og forbedre præcisionen i forudsigelsen af antallet til VFF's fremtidige hjemmekampe. I opgaven anvendes forskellige prædiktionsmodeller til forudsigelse, herunder Best Subset Selection, Ridge Regression, Lasso Regression og en naiv model som sammenligningsgrundlag for at udvikle en model til at forudsige antallet af afhentede guldmenuer ved fremtidige VFF-kampe. Det leder til følgende problemformulering:
 
-## 1.2 Problemformulering
+## Problemformulering
 
 Hvordan kan VFF anvende en datadrevet tilgang til at forudsige antallet af afhentede guldmenuer blandt VIP-gæster til fremtidige kampe, og hvordan kan indsigt i eksterne faktorer bidrage til bedre ressourceudnyttelse og reduktion af madspild?
 
-## 1.3 Definitioner/forkortelser
+## Definitioner/forkortelser
 
 Viborg F.F. Prof. Fodbold A/S: Herefter omtalt som “VFF” i opgaven. Når VFF nævnes, refereres der til virksomheden, medmindre fodboldholdet eksplicit er angivet.
 
@@ -677,21 +682,21 @@ VIP-gæster: I denne opgave refererer VIP-gæster til kunder med særlige fordel
 
 Guldmenu: En guldmenu består af en frankfurter med brød, to grillpølser med brød eller en fransk hotdog samt en drikkevare, som kan være sodavand, øl eller kaffe. Menuen afhentes i stadionets boder ved scanning af billet.
 
-## 1.4 Afgrænsning
+## Afgrænsning
 
 Formålet med opgaven er at udvikle en datadrevet løsning til at forudsige antallet af afhentede guldmenuer. Analysen fokuserer derfor kun på de kundesegmenter, der kan forudbestille guldmenuer. Det interne datasæt "Guld," leveret af VFF, indeholder oplysninger om afhentninger, men ikke adfærden for de enkelte segmenter (sponsorbilletter, sæsonabonnementer og billetabonnementer). Derfor behandles segmenterne som én samlet enhed, hvilket begrænser muligheden for at analysere forskelle i adfærd.
 
 Kun data fra VFF’s sæsoner i Superligaen er inkluderet (2013/2014, 2015/2016, 2016/2017, 2021/2022, 2022/2023 og 2023/2024), da antallet af forudbestillinger varierer betydeligt afhængigt af modstanderen. Data fra 1. division og udekampe er udeladt, da de vurderes irrelevante, og guldmenuer kun er tilgængelige på hjemmebane. Dette reducerer risikoen for bias og forhindrer fejlagtige estimater. Det er kun tilskuerdata fra Superstats, der er medtaget fra 2024/2025-sæsonen. ¨ Ud over det interne datasæt anvendes eksterne data fra Superstats og DMI. Det er kun tilskuerdata fra Superstats, der er medtaget fra 2024/2025-sæsonen.
 
-### 1.4.1 AI-værktøjer
+### AI-værktøjer
 
 I arbejdet med denne opgave er der anvendt ChatGPT (vers. GPT-4o) som et værktøj til at understøtte skriveprocessen. Konkret er ChatGPT blevet brugt til sparring, idégenerering, korrektur, sprogforbedring samt til trivielle kodestumper og lignende. Det skal dog understreges, at alle analyser, fortolkninger og konklusioner er udelukkende udarbejdet af os. Til transkription af interviews med VFF er værktøjet Sonix.ai blevet brugt til automatisk at udføre denne opgave. Herefter er relevante dele af transskriptionen manuelt blevet gennemgået for at sikre kvaliteten.
 
-## 1.5 Struktur
+## Struktur
 
 Opgavens struktur bygger på CRISP-DM modellen, hvor Data Understanding behandles i metodeafsnittet, Business Understanding, Data Preparation og Modeling præsenteres i analysen, og Evaluation berøres i diskussionsafsnittet. Eftersom det ikke kan fastslås, om de foreslåede løsninger vil blive implementeret eller integreret i VFF’s praksis, er Deployment ikke medtaget i analysen. Bilag 1 indeholder en gennemgang af CRISP-DM.
 
-# 2. Videnskabsteori
+# Videnskabsteori
 
 Opgavens videnskabsteoretiske ramme bygger på pragmatismen, med særligt fokus på tre aspekter: den overordnede erkendelsesinteresse samt sandhedsteori og det epistemologiske grundlag.
 
@@ -699,27 +704,27 @@ Pragmatismen prioriterer praksis og handling over abstrakt teori og fremhæver m
 
 Dette gør pragmatismen særligt relevant for VFF’s behov for at forudsige antallet af afhentede guldmenuer til fremtidige kampe. Ved at kombinere teoretisk indsigt med datadrevne løsninger kan klubben opnå en dybere forståelse af de faktorer, der påvirker afhentningsadfærden. Denne tilgang bidrager ikke alene til at forbedre forudsigelsernes præcision, men reducerer også spild, optimerer ressourceudnyttelsen og styrker VFF’s forretningsgrundlag. Disse perspektiver danner udgangspunktet for den metodiske tilgang, som uddybes i det følgende afsnit.
 
-# 3. Metode
+# Metode
 
 Dette afsnit beskriver den metodiske tilgang bag opgaven og er inddelt i tre dele. Først præsenteres den abduktive tilgang som ramme for undersøgelsen og metodetrianguleringen. Dernæst behandles overvejelser om dataindsamling og metodevalg. Til sidst vurderes datagrundlagets reliabilitet og validitet for at sikre troværdighed og relevans i forhold til problemformuleringen.
 
-## 3.1 Abduktion
+## Abduktion
 
 Med afsæt i pragmatismen gennem en abduktiv tilgang, beskrives abduktion som en proces, hvor mulige hypoteser formuleres som “kvalificerede gæt” og efterfølgende undersøges systematisk gennem afprøvning på relevant materiale. Denne tilgang er særligt anvendelig i undersøgelser, hvor årsagssammenhænge ikke er umiddelbart synlige, og hvor målet er at finde frem til de mest sandsynlige forklaringer (Egholm, 2014:176-77). I opgaven er abduktion anvendt som en overordnet ramme til at formulere og teste hypoteser om, hvordan eksterne faktorer som vejrforhold, modstanderens popularitet og VFF’s præstation i Superligaen påvirker VIP-gæsters afhentning af guldmenuer. Hypoteserne er udarbejdet med udgangspunkt i kvalitative gruppeinterviews med VFF’s medarbejdere, der gav en eksplorativ indsigt i problemfeltet. Den abduktive tilgang har vist sig særlig nyttig, da den muliggør systematisk at undersøge og efterprøve de mest plausible hypoteser, mens andre forkastes (Egholm 2014:189). For at undersøge disse hypoteser anvendes metodetriangulering, der refererer til brugen af mere end én metode til dataindsamling. Ved at kombinere kvalitative og kvantitative metoder kan denne metodetriangulering bidrage til en mere holistisk forståelse, idet metoderne kompenserer for hinandens respektive svagheder og mangler (Andersen, 2009:164-65). Dette vil blive præsenteret i det følgende afsnit.
 
-## 3.2 Kvalitativ empiri
+## Kvalitativ empiri
 
 Dataindsamlingen af den kvalitative del består af to gruppeinterviews med repræsentanter fra VFF’s forskellige afdelinger. Interviewene blev struktureret som semistrukturerede interviews, hvor en interviewguide med spørgsmål fordelt på forskellige temaer blev udarbejdet i fællesskab på holdet (Justesen & Mik-Meyer 2010: 55). Disse spørgsmål havde til formål at udforske centrale aspekter og opnå en eksplorativ forståelse af praksisser og udfordringer i VFF, samtidig med at relevante perspektiver fra organisationens forskellige afdelinger blev afdækket. Den kvalitative del har i denne sammenhæng fungeret som en forundersøgelse, der gennem gruppeinterviews har givet en eksplorativ afdækning af problemfeltet og fungeret som en vigtig inspiration til at identificere og udvælge relevante kvantitative data, der potentielt har indflydelse på afhentningen af guldmenuer.
 
 Gruppeinterviews blev lydoptaget og efterfølgende transskriberet ved hjælp af værktøjet Sonix.ai, som automatiserede den initiale transskriberingsproces. Det bemærkes dog, at kun de dele, der vurderes som relevante for opgavens problemstilling, er inkluderet i opgavens bilag.
 
-## 3.3 Kvantitativ empiri
+## Kvantitativ empiri
 
 Dataindsamlingen af de kvantitative data består af eksterne kilder som DMI og Superstats.dk samt det interne datasæt “Guld” fra VFF. Fra DMI er meteorologiske variabler som temperatur, nedbør og vind indsamlet via API, mens Superstats.dk er webscrapet for oplysninger om bl.a. spillesæson, kampdato, modstanderhold, kampresultat og tilskuertal. Det interne datasæt fra VFF indeholder oplysninger om kampdato, modstander, antal forudbestilte og afhentede guldmenuer.
 
 Dataindsamlingsprocessen har været præget af en fleksibel og iterativ arbejdsmetode inspireret af agile principper. Denne tilgang har også understøttet en abduktiv metode, hvor hypoteser blev testet og tilpasset gennem hele processen. Den iterative arbejdsmetode kræver dog særlig opmærksomhed på datagrundlagets reliabilitet og validitet, hvilket behandles i det følgende afsnit.
 
-## 3.4 Reliabilitet og validitet
+## Reliabilitet og validitet
 
 Afslutningsvis behandles validitet og reliabilitet, som er centrale kvalitetskriterier til undersøgelsen. Validitet vurderer, om undersøgelsens fund belyser forskningsspørgsmålet, mens reliabilitet fokuserer på metodernes konsistens og reproducerbarhed (Justesen & Mik-Meyer 2010: 39-42).
 
@@ -729,11 +734,11 @@ Validiteten af de kvantitative data blev sikret ved nøje udvælgelse af vejrfak
 
 Kombinationen af kvalitative og kvantitative metoder sikrer både metodisk troværdighed og praktisk anvendelighed, hvilket er centralt i en pragmatisk tilgang. Denne tilgang lægger vægt på resultaternes evne til at skabe handling og informere beslutninger (Egholm, 2014:179). På dette grundlag indledes analysen med en undersøgelse af VFF’s forretningskontekst for at identificere de variabler, der kan understøtte strategiske anbefalinger.
 
-# 4. Analyse - CRISP-DM
+# Analyse - CRISP-DM
 
 Analysen bygger på følgende faser i CRIPS-DM: Business Understanding, Data Preparation og Modeling.
 
-## 4.1 Business Understanding
+## Business Understanding
 
 For at kunne træffe datadrevne beslutninger på et oplyst grundlag kræves et godt indblik og en dyb forståelse af virksomhedens fundament. Dette opnås ved at gennemføre en række analyser, herunder en undersøgelse af virksomhedstype, produktsortiment, anvendelse af Data Product Canvas (DPC) og Alexandra-modellen.
 
@@ -741,7 +746,7 @@ VFF fremstår som en multifacetteret virksomhed, der kombinerer sport med en ræ
 
 Samlet set fremstår VFF som en organisation med mange facetter bestående af service og fysiske produkter til både B2B og B2C markedet. Den multifacetterede struktur gør det muligt for klubben at operere på tværs af flere markeder og skabe en balance, der forener kommercielle interesser med sportslige mål (Viborg FF, u.d.).
 
-## 4.2 Data Product Canvas
+## Data Product Canvas
 
 For at understøtte datadrevne beslutninger er Data Product Canvas (DPC) blevet anvendt som et planlægningsværktøj. DPC hjælper med at skabe overblik og struktur i udviklingen af datadrevne projekter (Carvalho, 2022). På grund af opgavens begrænsede omfang er det ikke muligt at gå i dybden med alle elementerne i DPC. En komplet skitsering findes i bilag 2, mens de mest relevante dele fremhæves i dette afsnit.
 
@@ -749,7 +754,7 @@ Anvendelsen af DPC har spillet en central rolle i at skabe struktur og fokus i p
 
 Samlet set har DPC bidraget til at skabe et klart overblik, hvor detaljeret dataanalyse er blevet koblet med målet om at forbedre præcisionen i forudsigelsen af guldmenuerne. Værktøjet har været en hjælp til at håndtere projektets kompleksitet og samtidig bevare fokus på, hvordan de forskellige aspekter hænger sammen. For at udnytte data endnu mere effektivt er det dog nødvendigt at forstå VFF’s nuværende niveau af datamodenhed, som uddybes i næste afsnit.
 
-## 4.3 Datamodenhed
+## Datamodenhed
 
 Der er udarbejdet en analyse af VFF’s datamodenhed med udgangspunkt i Alexandra-modellen (Alexandra Instituttet, 2020). En mere dybdegående gennemgang af analysen findes i bilag 3.
 
@@ -763,7 +768,7 @@ For at avancere yderligere i datamodenhed, bør VFF bl.a. begynde at bruge data 
 
 “*Jeg tror mange har fået set, at det er da en god idé. Men det der med lige at gøre det, og så nogle gange stole på noget data, som måske talte imod ens egen mavefornemmelse, tror jeg er en svær øvelse.*” (Bilag 8).
 
-## 4.4 Data Preparation
+## Data Preparation
 
 For at skabe struktur og overblik blev koderne i projektet udarbejdet i særskilte filer, der til slut blev samlet i en enkelt fil. Nedenfor præsenteres en oversigt over de enkelte dele.
 
@@ -787,7 +792,7 @@ Efter hentning af den nødvendige data fra SQL, færdiggøres de variabler, som 
 
 -   “Mean_temp_6h” fravalgt pga. korrelation på 0,96 med “mean_temp_6h_poly2”
 
-## 4.5 Modeling
+## Modeling
 
 I denne del blev metoderne Ridge, Lasso, Naiv-model og Best Subset Selection anvendt. Målet er at identificere en model, der både kunne minimere den gennemsnitlige krydsvalideringsfejl (CV-RMSE) og opnå en balance mellem præcision og modelkompleksitet.
 
@@ -795,24 +800,15 @@ Ridge kom frem til resultaterne med en test-RMSE på 150,19 og en CV-RMSE på 14
 
 Ved Best Subset Selection blev modellen med 13 prædiktorer først identificeret af R som den bedste løsning, baseret på dens lave gennemsnitlige CV-RMSE på 154,74. Dens test-RMSE på 174,88 afslørede dog tegn på overfitting. Som det fremgår af figur 1 ses det dog, at en model med kun tre prædiktorer har tilnærmelsesvis en tæt fejl sammenlignet med 13 prædiktorer. Efter beregninger viste modellen med tre prædiktorer en test-RMSE på 138,26 og en CV-RMSE på 156,95, hvilket repræsenterer en minimal forskel i forhold til modellen med 13 prædiktorer, men med væsentligt lavere kompleksitet.
 
+![](images/Modeloversigt.PNG){fig-alt="Figur 1"}
+
 Sammenfattende understøtter den grafiske analyse og sammenligningerne, at Best Subset Selection med tre prædiktorer er den mest optimale model på tværs af metoderne. Modellen præsterer med en betydelig bedre balance mellem præcision og kompleksitet, idet den marginale forbedring i præcision ved modellen med 13 prædiktorer ikke retfærdiggør dens højere kompleksitet. Resultaterne af RMSE fremgår på tabellen i bilag 4.
 
-```{r}
-#| results: asis
-# Plot gennemsnitlige cross-validation fejl med alle værdier på x-aksen
-plot(mean.cv.errors, type = "b", pch = 16, col = "darkred", 
-     xlab = "Antal prædiktorer", ylab = "Gennemsnitlig CV MSE", 
-     main = "Modelstørrelse vs. Gennemsnitlig CV MSE", xaxt = "n")
-axis(1, at = 1:length(mean.cv.errors), labels = 1:length(mean.cv.errors))  # Tilføj alle x-værdier
-grid()  # Tilføj gitterlinjer
-```
-
-
-# 5. Evaluation
+# Evaluation
 
 Afsnittet vurderer analysens resultater i forhold til hypoteserne og belyser udfordringerne i modellerne. På baggrund heraf præsenteres løsningsforslag, der understøtter klubbens mål.
 
-## 5.1 Evaluering af hypoteser
+## Evaluering af hypoteser
 
 I dette afsnit vurderes resultaterne i forhold til de opstillede hypoteser, jf. afsnit 1.1, og deres praktiske indflydelse på afhentningen af guldmenuer. De eksakte værdier og koefficienter fra de anvendte modeller er præsenteret i bilag 7.
 
@@ -822,7 +818,7 @@ I den anden hypotese om afhentningsgradens stigning ved lokale rivaliseringer og
 
 På trods af modellernes evne til at forudsige afhentningsmønstre er der visse begrænsninger. Det er vanskeligt at afgøre, om VIP-gæsterne undlader at hente deres guldmenu på grund af personlige årsager, som at de allerede har spist hjemmefra, er blevet syg, eller om det faktum, at guldmenuerne fås gratis via sponsorbilletter, reducerer incitamentet til afhentning. Disse faktorer ligger uden for modellernes rækkevidde og kan påvirke præcisionen i forudsigelserne.
 
-## 5.2 Anbefalinger
+## Anbefalinger
 
 For at forudsige antallet af guldmenuer til VFF’s hjemmekampe og samtidig understøtte klubbens kommercielle og sportslige mål foreslås det på baggrund af denne opgaves fund og indsigter, at VFF implementerer en strategi, der kombinerer optimering af afhentningsgraden med initiativer, der styrker bæredygtighedsprofilen. En af forudsætningerne for at nå i mål med et eller flere af disse løsningsforslag, er at VFF fortsætter med at uddanne deres personale inden for håndtering af og anvendelse af data i det daglige arbejde. Dette vil være med til at øge virksomhedens datamodenhed.
 
@@ -832,7 +828,7 @@ En anden tilgang, VFF kunne overveje, er at koble afhentning af guldmenuer til b
 
 Samlet set kan en kombination af disse initiativer ikke blot kun hjælpe VFF med at reducere spild, men også styrke relationen til fans og partnere, fremme klubbens bæredygtighedsprofil og bidrage til balancen mellem kommercielle og sportslige mål.
 
-# 6. Konklusion
+# Konklusion
 
 Denne opgave har undersøgt, hvordan man ved hjælp af prædiktionsmodeller og analyser af eksterne faktorer kan forudsige antallet af guldmenuer, der afhentes til VFF’s hjemmekampe.
 
@@ -842,7 +838,7 @@ For at forbedre modellens præcision anbefales det, at VFF indsamler mere detalj
 
 En mere datadrevet tilgang kan reducere spild og sikre en bedre udnyttelse af ressourcer, hvilket styrker VFF’s bæredygtighedsprofil. Samtidig kan klubben ved at forene økonomiske og miljømæssige hensyn opnå sine kommercielle og sportslige mål og fremstå som en ansvarlig aktør, der skaber værdi for fans, partnere og miljøet.
 
-# 7. Litteraturliste
+# Litteraturliste
 
 **Bøger**
 
@@ -868,13 +864,25 @@ En mere datadrevet tilgang kan reducere spild og sikre en bedre udnyttelse af re
 
 \- Viborg FF, u.d. Officiel hjemmeside. Tilgængelig fra: https://vff.dk/ \[Tilgået 14. december 2024\].
 
-# 8 Bilag
- 
-1. CRISP-DM
-2. Data Product Canvas 
-3. AlexandraModellen 
-4. RMSE-Resultater 
-5. Forklaring af Datasættets variabler
-6. Koefficienter
-7. VIF-Factor
-8. Interview 
+**Præsentationer**
+
+\- Christensen, P., 2024. Dania’s Dataanalytiker: Tirsdag den 5/11-2024. PowerPoint-præsentation den 5. november 2024. Viborg: Viborg FF.
+
+\- Nørgaard, T. og Jakobsen, D.L., 2024. VFF x Dania Tirsdag d. 5/11-2024. PowerPoint-præsentation den 5. november 2024. Viborg: Viborg FF.
+
+**AI-værktøjer**
+
+\- ChatGPT, version GPT-4, 2024. Genereret af OpenAI’s sprogmodel, december 2024. Tilgængelig fra: https://openai.com/chatgpt.
+
+\- Sonix.ai, 2024. Automatisk transkriptionsværktøj. Tilgængelig fra: https://sonix.ai.
+
+# Bilag
+
+1.  CRISP-DM
+2.  Data Product Canvas
+3.  AlexandraModellen
+4.  RMSE-Resultater
+5.  Forklaring af Datasættets variabler
+6.  Koefficienter
+7.  VIF-Factor
+8.  Interview
